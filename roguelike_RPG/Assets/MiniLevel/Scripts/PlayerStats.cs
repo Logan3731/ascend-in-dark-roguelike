@@ -1,7 +1,7 @@
 using System;
 using UnityEngine;
 
-// 주인공의 HP·MP·허기·횃불 내구도. 한 턴이 끝날 때마다 허기와 횃불이 줄어든다.
+// 주인공의 HP·MP·허기·횃불 내구도와 소지품, 선/악. 한 턴이 끝날 때마다 허기와 (들고 있는) 횃불이 줄어든다.
 public class PlayerStats : MonoBehaviour
 {
     [Header("HP / MP")]
@@ -20,29 +20,46 @@ public class PlayerStats : MonoBehaviour
     public int torchWarnAt = 20;
     public Light torchLight;
     public GameObject torchFlame;
+    public GameObject torchStick;
 
+    [Header("소지품")]
+    public int startFood = 2;
+    public int foodRestore = 30;
+
+    public string PlayerName { get; set; } = "";
     public int Hp { get; private set; }
     public int Mp { get; private set; }
     public int Hunger { get; private set; }
     public int Torch { get; private set; }
-    public bool TorchLit => Torch > 0;
+    public bool HasTorch { get; private set; }
+    public bool TorchHeld { get; private set; }
+    public bool TorchLit => HasTorch && TorchHeld && Torch > 0;
+    public int Food { get; private set; }
+    public int Gold { get; private set; }
+    public bool HasTools { get; private set; }
+    public int Karma { get; private set; }   // + 선 / - 악 (플레이어에게는 숨김)
     public bool Dead => Hp <= 0;
 
     public event Action OnChanged;
 
     void Awake()
     {
-        Hp = maxHp; Mp = maxMp; Hunger = maxHunger; Torch = maxTorch;
+        Hp = maxHp; Mp = maxMp; Hunger = maxHunger; Food = startFood;
 
         // 횃불은 손뼈 아래에 있어서 직렬화 참조가 깨지기 쉽다 -> 실행 시 자식에서 찾는다
         if (torchLight == null || torchLight.gameObject.scene != gameObject.scene)
             torchLight = GetComponentInChildren<Light>(true);
         if (torchFlame == null || torchFlame.scene != gameObject.scene)
-        {
-            torchFlame = null;
-            foreach (var t in GetComponentsInChildren<Transform>(true))
-                if (t.name == "Flame") { torchFlame = t.gameObject; break; }
-        }
+            torchFlame = FindChild("Flame");
+        if (torchStick == null || torchStick.scene != gameObject.scene)
+            torchStick = FindChild("TorchStick");
+    }
+
+    GameObject FindChild(string childName)
+    {
+        foreach (var t in GetComponentsInChildren<Transform>(true))
+            if (t.name == childName) return t.gameObject;
+        return null;
     }
 
     void OnEnable() { TurnManager.OnTurnEnded += HandleTurn; }
@@ -75,6 +92,8 @@ public class PlayerStats : MonoBehaviour
             if (Torch == 0)
             {
                 GameLog.Add("횃불이 꺼졌다.", GameLog.Bad);
+                HasTorch = false;
+                TorchHeld = false;
                 ApplyTorchVisual();
             }
         }
@@ -89,22 +108,42 @@ public class PlayerStats : MonoBehaviour
         OnChanged?.Invoke();
     }
 
-    public void Eat(int amount)
+    // 식량 하나를 먹는다
+    public void EatFood()
     {
-        Hunger = Mathf.Min(maxHunger, Hunger + amount);
+        if (Dead) return;
+        if (Food <= 0) { GameLog.Add("먹을 것이 없다.", GameLog.Info); return; }
+        Food--;
+        Hunger = Mathf.Min(maxHunger, Hunger + foodRestore);
         GameLog.Add("배를 채웠다.", GameLog.Good);
         OnChanged?.Invoke();
     }
 
-    public void RefillTorch(int amount)
+    public void AddFood(int amount) { Food = Mathf.Max(0, Food + amount); OnChanged?.Invoke(); }
+    public void AddGold(int amount) { Gold = Mathf.Max(0, Gold + amount); OnChanged?.Invoke(); }
+    public void AddKarma(int amount) { Karma += amount; Debug.Log($"[Karma] {Karma}"); }
+    public void GiveTools() { HasTools = true; OnChanged?.Invoke(); }
+
+    // 새 횃불을 얻는다 (아직 들지는 않은 상태)
+    public void GiveTorch()
     {
-        bool wasOut = !TorchLit;
-        Torch = Mathf.Min(maxTorch, Torch + amount);
-        if (wasOut) ApplyTorchVisual();
+        HasTorch = true;
+        Torch = maxTorch;
+        ApplyTorchVisual();
         OnChanged?.Invoke();
     }
 
-    // 횃불이 꺼져도 완전히 안 보이진 않게: 주변만 희미하게 보이는 차가운 빛으로 바꾼다
+    public void ToggleTorch()
+    {
+        if (Dead) return;
+        if (!HasTorch) { GameLog.Add("횃불이 없다.", GameLog.Info); return; }
+        TorchHeld = !TorchHeld;
+        GameLog.Add(TorchHeld ? "횃불을 들었다." : "횃불을 내렸다.", GameLog.Info);
+        ApplyTorchVisual();
+        OnChanged?.Invoke();
+    }
+
+    // 횃불이 없거나 꺼져도 완전히 안 보이진 않게: 주변만 희미하게 보이는 차가운 빛으로 바꾼다
     float litRange, litIntensity;
     Color litColor;
     bool litCached;
@@ -120,5 +159,6 @@ public class PlayerStats : MonoBehaviour
             torchLight.shadows = TorchLit ? LightShadows.Soft : LightShadows.None;
         }
         if (torchFlame != null) torchFlame.SetActive(TorchLit);
+        if (torchStick != null) torchStick.SetActive(HasTorch && TorchHeld);
     }
 }

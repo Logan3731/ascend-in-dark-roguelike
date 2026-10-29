@@ -9,7 +9,7 @@ public class HUD : MonoBehaviour
 
     Font font;
     RectTransform hpFill, mpFill, hungerFill, torchFill;
-    Text hpText, mpText, hungerText, torchText, turnText;
+    Text hpText, mpText, hungerText, torchText, turnText, nameText, invText;
     Text[] logLines;
 
     void Awake()
@@ -56,6 +56,9 @@ public class HUD : MonoBehaviour
     void RefreshBars()
     {
         if (stats == null) return;
+        nameText.text = stats.PlayerName;
+        string torch = !stats.HasTorch ? "없음" : stats.TorchHeld ? "듦" : "안 듦";
+        invText.text = $"식량 {stats.Food}    골드 {stats.Gold}    횃불 {torch}";
         SetBar(hpFill, hpText, stats.Hp, stats.maxHp);
         SetBar(mpFill, mpText, stats.Mp, stats.maxMp);
         SetBar(hungerFill, hungerText, stats.Hunger, stats.maxHunger);
@@ -97,11 +100,31 @@ public class HUD : MonoBehaviour
         scaler.matchWidthOrHeight = 0.5f;
         var root = canvasGo.GetComponent<RectTransform>();
 
-        float y = -30f;
+        nameText = MakeText(root, "Name", 28, TextAnchor.MiddleLeft);
+        var nr = nameText.rectTransform;
+        nr.anchorMin = nr.anchorMax = nr.pivot = new Vector2(0, 1);
+        nr.anchoredPosition = new Vector2(40, -24);
+        nr.sizeDelta = new Vector2(400, 36);
+
+        float y = -66f;
         hpFill = MakeBar(root, "HP", new Color(0.75f, 0.2f, 0.17f), ref y, out hpText);
         mpFill = MakeBar(root, "MP", new Color(0.25f, 0.42f, 0.72f), ref y, out mpText);
         hungerFill = MakeBar(root, "허기", new Color(0.55f, 0.62f, 0.25f), ref y, out hungerText);
         torchFill = MakeBar(root, "횃불", new Color(0.94f, 0.54f, 0.17f), ref y, out torchText);
+
+        invText = MakeText(root, "Inventory", 20, TextAnchor.MiddleLeft);
+        var ir = invText.rectTransform;
+        ir.anchorMin = ir.anchorMax = ir.pivot = new Vector2(0, 1);
+        ir.anchoredPosition = new Vector2(40, y - 4);
+        ir.sizeDelta = new Vector2(600, 28);
+
+        var keys = MakeText(root, "Keys", 18, TextAnchor.MiddleLeft);
+        keys.text = "[F] 횃불 들기/내리기    [E] 식량 먹기";
+        keys.color = new Color(1, 1, 1, 0.5f);
+        var kr = keys.rectTransform;
+        kr.anchorMin = kr.anchorMax = kr.pivot = new Vector2(0, 1);
+        kr.anchoredPosition = new Vector2(40, y - 34);
+        kr.sizeDelta = new Vector2(600, 26);
 
         turnText = MakeText(root, "Turn", 30, TextAnchor.UpperRight);
         var tr = turnText.rectTransform;
