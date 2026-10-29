@@ -41,6 +41,10 @@ public class PlayerStats : MonoBehaviour
     public bool Dead => Hp <= 0;
     public int PoisonTurns { get; private set; }
 
+    [Header("힘: 같은 턴에 서로 때리면 높은 쪽이 먼저")]
+    public int strength = 5;
+    public int Strength => strength;
+
     [Header("공격력 (최소~최대, 매번 무작위)")]
     public int fistMin = 1, fistMax = 2;
     public int axeMin = 2, axeMax = 7;           // 도끼를 들면 맨손 + 도끼 = 3~9

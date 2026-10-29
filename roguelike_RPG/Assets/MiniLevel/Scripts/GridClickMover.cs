@@ -162,14 +162,15 @@ public class GridClickMover : MonoBehaviour
     }
 
     // 공격할 때 모델만 대상 쪽으로 살짝 내질렀다가 돌아온다
-    public void PlayLunge(Vector3 targetPos)
+    public void PlayLunge(Vector3 targetPos, float delay = 0f)
     {
-        Face(targetPos);
-        if (transform.childCount > 0) StartCoroutine(Lunge(transform.GetChild(0), targetPos));
+        if (transform.childCount > 0) StartCoroutine(Lunge(transform.GetChild(0), targetPos, delay));
     }
 
-    IEnumerator Lunge(Transform model, Vector3 targetPos)
+    IEnumerator Lunge(Transform model, Vector3 targetPos, float delay)
     {
+        if (delay > 0f) yield return new WaitForSeconds(delay);
+        Face(targetPos);
         var home = model.localPosition;
         var dir = targetPos - transform.position; dir.y = 0;
         var push = dir.normalized * 1.2f;
@@ -200,6 +201,7 @@ public class GridClickMover : MonoBehaviour
             yield break;
         }
         moving = true;
+        TurnResolver.BeginTurn(cell, moveSeconds);   // 몬스터도 같은 시간에 움직인다
         if (animator != null) animator.SetBool(MovingParam, true);
         var from = transform.position;
         var to = GridTile.CellToWorld(cell);
@@ -216,7 +218,7 @@ public class GridClickMover : MonoBehaviour
         }
         transform.position = to;
         moving = false;
-        TurnManager.EndTurn();
+        TurnResolver.ResolveAttacks(stats, null);   // 이동한 턴: 붙어 있던 몬스터만 공격
 
         // 움직이는 대상(몬스터)이면 경로 중간이라도 옆에 붙는 순간 상호작용한다
         if (pendingTarget != null && pendingTarget.isActiveAndEnabled && IsNextTo(cell, pendingTarget.Cell))

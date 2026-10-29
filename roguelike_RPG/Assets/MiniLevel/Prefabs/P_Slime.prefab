@@ -65,6 +65,7 @@ MonoBehaviour:
   hpVariance: 0.15
   attackMin: 1
   attackMax: 3
+  strength: 2
   evasion: 0
   sight: 3
   moveEvery: 2

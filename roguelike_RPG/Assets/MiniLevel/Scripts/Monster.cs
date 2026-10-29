@@ -14,6 +14,7 @@ public class Monster : Interactable
     public int baseHp = 10;
     [Range(0f, 0.5f)] public float hpVariance = 0.15f;   // 같은 레벨·종족이어도 체력이 ±이만큼 달라진다
     public int attackMin = 1, attackMax = 3;
+    public int strength = 3;                               // 같은 턴에 서로 때리면 힘이 높은 쪽이 먼저
     [Range(0f, 1f)] public float evasion = 0.1f;          // 플레이어 공격을 피할 확률
     public int sight = 3;                                  // 이 거리(칸) 안에 들어오면 움직이기 시작
     public int moveEvery = 1;                              // 몇 턴마다 한 번 움직이는가 (슬라임 2)
@@ -32,6 +33,8 @@ public class Monster : Interactable
     public bool Dead => Hp <= 0;
     public int AtkMin { get; private set; }
     public int AtkMax { get; private set; }
+    public int Strength { get; private set; }
+    public bool WillAttack { get; private set; }           // 이번 턴에 이동 대신 공격한다
     public string Label => $"Lv.{level} {displayName}";
 
     bool awake;
@@ -53,9 +56,6 @@ public class Monster : Interactable
 
     void Start() { bar = MonsterHealthBar.Create(this); }
 
-    void OnEnable() { TurnManager.OnTurnEnded += TakeTurn; }
-    void OnDisable() { TurnManager.OnTurnEnded -= TakeTurn; }
-
     void OnDestroy() { if (bar != null) Destroy(bar.gameObject); }
 
     // 레벨에 따라 강해지고, 체력은 개체마다 조금씩 다르다
@@ -67,6 +67,7 @@ public class Monster : Interactable
         Hp = MaxHp;
         AtkMin = attackMin + lv;
         AtkMax = attackMax + lv;
+        Strength = strength + lv;
     }
 
     // 분열한 슬라임: 부모의 절반 능력치, 다시 분열하지 않음
@@ -78,6 +79,7 @@ public class Monster : Interactable
         Hp = MaxHp;
         AtkMin = Mathf.Max(1, parent.AtkMin / 2);
         AtkMax = Mathf.Max(AtkMin, parent.AtkMax / 2);
+        Strength = Mathf.Max(1, parent.Strength / 2);
         goldMin = parent.goldMin / 2;
         goldMax = Mathf.Max(goldMin, parent.goldMax / 2);
         awake = true;
@@ -85,29 +87,48 @@ public class Monster : Interactable
         if (Visual != null) { visualHome = parent.visualHome; Visual.localPosition = visualHome; }
     }
 
-    // 플레이어가 클릭해서 다가와 공격
+    // 플레이어가 클릭해서 다가와 공격: 제자리에서 한 턴을 쓴다 (다른 몬스터는 그동안 움직이고, 공격은 힘 순서대로)
     public override void Interact(PlayerStats player)
     {
         if (Dead || player.Dead) return;
         var mover = player.GetComponent<GridClickMover>();
-        if (mover != null) mover.PlayLunge(transform.position);
+        TurnResolver.BeginTurn(GridTile.WorldToCell(player.transform.position), mover != null ? mover.moveSeconds : 0.3f);
+        TurnResolver.ResolveAttacks(player, this);
+    }
+
+    // 차례가 와서 플레이어에게 맞는다 (delay: 연출 시작까지 기다릴 시간)
+    public void ReceivePlayerAttack(PlayerStats player, float delay)
+    {
+        var mover = player.GetComponent<GridClickMover>();
+        if (mover != null) mover.PlayLunge(transform.position, delay);
 
         if (Random.value < evasion)
             GameLog.Add($"{displayName}{Josa("이", "가")} 공격을 피했다.", GameLog.Info);
         else
-            TakeDamage(player.RollAttack(), player);
-
-        TurnManager.EndTurn();
+            TakeDamage(player.RollAttack(), player, delay);
     }
 
-    void TakeDamage(int amount, PlayerStats player)
+    // 차례가 와서 플레이어를 공격한다
+    public void AttackPlayer(PlayerStats player, float delay)
+    {
+        StartCoroutine(Lunge(player.transform.position, delay));
+        HitPlayer(player);
+        if (!player.Dead && Random.value < doubleAttackChance)
+        {
+            GameLog.Add($"{displayName}{Josa("이", "가")} 한 번 더 덤벼든다!", GameLog.Bad);
+            StartCoroutine(Lunge(player.transform.position, delay + TurnResolver.AttackGap));
+            HitPlayer(player);
+        }
+    }
+
+    void TakeDamage(int amount, PlayerStats player, float delay)
     {
         Hp = Mathf.Max(0, Hp - amount);
         awake = true;
         if (bar != null) bar.Refresh();
         if (!Dead)
         {
-            StartCoroutine(Flinch());
+            StartCoroutine(Flinch(delay));
             GameLog.Add($"{displayName}에게 {amount}의 피해.", GameLog.Info);
             return;
         }
@@ -122,7 +143,7 @@ public class Monster : Interactable
         if (splitOnDeath && !isSplitChild) Split();
         enabled = false;
         if (bar != null) Destroy(bar.gameObject);
-        FadeOut.Run(this, 0.8f, 0.2f);
+        FadeOut.Run(this, 0.8f, delay + 0.2f);
     }
 
     void Split()
@@ -144,15 +165,12 @@ public class Monster : Interactable
         GameLog.Add($"{displayName}{Josa("이", "가")} 둘로 갈라졌다!", GameLog.Warn);
     }
 
-    void TakeTurn(int turn)
+    // 이번 턴 계획: 플레이어가 서게 될 칸 옆이면 공격 대기, 아니면 플레이어와 동시에 한 칸 다가간다
+    public void PlanAndMove(Vector2Int playerCell, int turn, float moveSeconds)
     {
-        if (Dead) return;
-        var player = FindAnyObjectByType<PlayerStats>();
-        if (player == null || player.Dead) return;
-
+        WillAttack = false;
         var me = Cell;
-        var target = GridTile.WorldToCell(player.transform.position);
-        int dist = Mathf.Abs(me.x - target.x) + Mathf.Abs(me.y - target.y);
+        int dist = Mathf.Abs(me.x - playerCell.x) + Mathf.Abs(me.y - playerCell.y);
         if (!awake && dist <= sight)
         {
             awake = true;
@@ -160,21 +178,10 @@ public class Monster : Interactable
         }
         if (!awake) return;
 
-        if (dist == 1)
-        {
-            StartCoroutine(Lunge(GridTile.CellToWorld(target)));
-            HitPlayer(player);
-            if (!player.Dead && Random.value < doubleAttackChance)
-            {
-                GameLog.Add($"{displayName}{Josa("이", "가")} 한 번 더 덤벼든다!", GameLog.Bad);
-                HitPlayer(player);
-            }
-            return;
-        }
-
+        if (dist == 1) { WillAttack = true; return; }
         if (moveEvery > 1 && turn % moveEvery != 0) return;
-        var next = StepToward(me, target);
-        if (next != null) StartCoroutine(MoveTo(next.Value));
+        var next = StepToward(me, playerCell);
+        if (next != null) StartCoroutine(MoveTo(next.Value, moveSeconds));
     }
 
     void HitPlayer(PlayerStats player)
@@ -236,7 +243,7 @@ public class Monster : Interactable
     }
 
     // 칸 위치(루트)는 즉시 옮겨서 다른 몬스터와 겹치지 않게 하고, 모델(자식)만 미끄러지듯 따라간다
-    IEnumerator MoveTo(Vector2Int cell)
+    IEnumerator MoveTo(Vector2Int cell, float seconds)
     {
         var from = transform.position;
         var to = GridTile.CellToWorld(cell);
@@ -245,7 +252,7 @@ public class Monster : Interactable
         var v = Visual;
         if (v == null) yield break;
         var offset = from - to;
-        for (float t = 0f; t < 1f; t += Time.deltaTime / 0.25f)
+        for (float t = 0f; t < 1f; t += Time.deltaTime / seconds)
         {
             v.position = transform.TransformPoint(visualHome) + offset * (1f - t);
             yield return null;
@@ -262,8 +269,9 @@ public class Monster : Interactable
         if (dir.sqrMagnitude > 0.001f) transform.rotation = Quaternion.LookRotation(dir);
     }
 
-    IEnumerator Lunge(Vector3 targetPos)
+    IEnumerator Lunge(Vector3 targetPos, float delay)
     {
+        if (delay > 0f) yield return new WaitForSeconds(delay);
         Face(targetPos);
         var v = Visual;
         if (v == null) yield break;
@@ -277,8 +285,9 @@ public class Monster : Interactable
         v.localPosition = visualHome;
     }
 
-    IEnumerator Flinch()
+    IEnumerator Flinch(float delay)
     {
+        if (delay > 0f) yield return new WaitForSeconds(delay + 0.1f);
         var v = Visual;
         if (v == null) yield break;
         for (float t = 0f; t < 1f; t += Time.deltaTime / 0.2f)
