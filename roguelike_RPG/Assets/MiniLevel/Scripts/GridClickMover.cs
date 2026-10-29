@@ -31,6 +31,9 @@ public class GridClickMover : MonoBehaviour
         if (stats != null && stats.Dead)
         {
             path.Clear();
+            // 사망·재시작(경험의 정수)이 생기기 전까지 임시로 R로 씬을 다시 연다
+            if (Keyboard.current != null && Keyboard.current.rKey.wasPressedThisFrame)
+                UnityEngine.SceneManagement.SceneManager.LoadScene(gameObject.scene.name);
             return;
         }
         if (DialogUI.IsOpen) return;
@@ -158,8 +161,44 @@ public class GridClickMover : MonoBehaviour
         if (dir.sqrMagnitude > 0.001f) transform.rotation = Quaternion.LookRotation(dir);
     }
 
+    // 공격할 때 모델만 대상 쪽으로 살짝 내질렀다가 돌아온다
+    public void PlayLunge(Vector3 targetPos)
+    {
+        Face(targetPos);
+        if (transform.childCount > 0) StartCoroutine(Lunge(transform.GetChild(0), targetPos));
+    }
+
+    IEnumerator Lunge(Transform model, Vector3 targetPos)
+    {
+        var home = model.localPosition;
+        var dir = targetPos - transform.position; dir.y = 0;
+        var push = dir.normalized * 1.2f;
+        for (float t = 0f; t < 1f; t += Time.deltaTime / 0.25f)
+        {
+            model.position = transform.TransformPoint(home) + push * Mathf.Sin(t * Mathf.PI);
+            yield return null;
+        }
+        model.localPosition = home;
+    }
+
+    static bool Blocked(Vector2Int cell)
+    {
+        foreach (var b in FindObjectsByType<GridBlocker>(FindObjectsSortMode.None))
+            if (b.enabled && b.Cell == cell) return true;
+        return false;
+    }
+
     IEnumerator Step(Vector2Int cell)
     {
+        // 그새 몬스터가 길을 막았으면 멈춘다
+        if (Blocked(cell))
+        {
+            path.Clear();
+            pendingTarget = null;
+            if (targetMarker != null) targetMarker.SetActive(false);
+            if (animator != null) animator.SetBool(MovingParam, false);
+            yield break;
+        }
         moving = true;
         if (animator != null) animator.SetBool(MovingParam, true);
         var from = transform.position;
@@ -178,6 +217,10 @@ public class GridClickMover : MonoBehaviour
         transform.position = to;
         moving = false;
         TurnManager.EndTurn();
+
+        // 움직이는 대상(몬스터)이면 경로 중간이라도 옆에 붙는 순간 상호작용한다
+        if (pendingTarget != null && pendingTarget.isActiveAndEnabled && IsNextTo(cell, pendingTarget.Cell))
+            path.Clear();
 
         // 밟으면 발동하는 칸
         foreach (var trig in FindObjectsByType<Interactable>(FindObjectsSortMode.None))

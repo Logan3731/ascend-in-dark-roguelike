@@ -39,6 +39,7 @@ public class PlayerStats : MonoBehaviour
     public bool HasTools { get; private set; }
     public int Karma { get; private set; }   // + 선 / - 악 (플레이어에게는 숨김)
     public bool Dead => Hp <= 0;
+    public int AttackPower => HasTools ? 8 : 4;   // 맨손 / 도끼
 
     public event Action OnChanged;
 
@@ -104,7 +105,11 @@ public class PlayerStats : MonoBehaviour
     {
         if (Dead) return;
         Hp = Mathf.Max(0, Hp - amount);
-        if (Dead) GameLog.Add("당신은 쓰러졌다. 경험이 탑에 스며든다…", GameLog.Bad);
+        if (Dead)
+        {
+            GameLog.Add("당신은 쓰러졌다. 경험이 탑에 스며든다…", GameLog.Bad);
+            GameLog.Add("[R] 다시 시작", GameLog.Info);
+        }
         OnChanged?.Invoke();
     }
 
