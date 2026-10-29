@@ -39,7 +39,30 @@ public class PlayerStats : MonoBehaviour
     public bool HasTools { get; private set; }
     public int Karma { get; private set; }   // + 선 / - 악 (플레이어에게는 숨김)
     public bool Dead => Hp <= 0;
-    public int AttackPower => HasTools ? 8 : 4;   // 맨손 / 도끼
+    public int PoisonTurns { get; private set; }
+
+    [Header("공격력 (최소~최대, 매번 무작위)")]
+    public int fistMin = 1, fistMax = 2;
+    public int axeMin = 2, axeMax = 7;           // 도끼를 들면 맨손 + 도끼 = 3~9
+
+    public int AttackMin => fistMin + (HasTools ? axeMin : 0);
+    public int AttackMax => fistMax + (HasTools ? axeMax : 0);
+
+    public int RollAttack()
+    {
+        int dmg = UnityEngine.Random.Range(fistMin, fistMax + 1);
+        if (HasTools) dmg += UnityEngine.Random.Range(axeMin, axeMax + 1);
+        return dmg;
+    }
+
+    public void Poison(int turns)
+    {
+        if (Dead) return;
+        bool fresh = PoisonTurns == 0;
+        PoisonTurns = Mathf.Max(PoisonTurns, turns);
+        if (fresh) GameLog.Add("독에 중독되었다!", GameLog.Bad);
+        OnChanged?.Invoke();
+    }
 
     public event Action OnChanged;
 
@@ -83,6 +106,13 @@ public class PlayerStats : MonoBehaviour
         {
             if (before > 0) GameLog.Add("굶주림에 몸이 버티지 못한다.", GameLog.Bad);
             Damage(starveDamage);
+        }
+
+        if (PoisonTurns > 0)
+        {
+            PoisonTurns--;
+            Damage(1);
+            if (PoisonTurns == 0 && !Dead) GameLog.Add("독이 빠졌다.", GameLog.Good);
         }
 
         if (TorchLit)

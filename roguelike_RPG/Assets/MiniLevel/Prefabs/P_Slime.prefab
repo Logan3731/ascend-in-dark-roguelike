@@ -60,15 +60,20 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Monster
   triggerOnEnter: 0
   displayName: "\uC2AC\uB77C\uC784"
-  maxHp: 20
-  attack: 3
+  level: 1
+  baseHp: 16
+  hpVariance: 0.15
+  attackMin: 1
+  attackMax: 3
   evasion: 0
   sight: 3
   moveEvery: 2
-  erratic: 0
-  hoverHeight: 0
-  foodDropChance: 0
-  goldDrop: 5
+  doubleAttackChance: 0
+  poisonChance: 0
+  poisonTurns: 4
+  splitOnDeath: 1
+  goldMin: 0
+  goldMax: 3
 --- !u!1001 &8156496620684723504
 PrefabInstance:
   m_ObjectHideFlags: 0
