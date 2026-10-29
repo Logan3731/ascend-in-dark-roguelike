@@ -1,0 +1,34 @@
+# Unity (프로젝트 폴더: roguelike_RPG/)
+roguelike_RPG/[Ll]ibrary/
+roguelike_RPG/[Tt]emp/
+roguelike_RPG/[Oo]bj/
+roguelike_RPG/[Bb]uild/
+roguelike_RPG/[Bb]uilds/
+roguelike_RPG/[Ll]ogs/
+roguelike_RPG/[Uu]ser[Ss]ettings/
+roguelike_RPG/[Mm]emoryCaptures/
+roguelike_RPG/[Rr]ecordings/
+roguelike_RPG/.vs/
+roguelike_RPG/.vscode/
+roguelike_RPG/.idea/
+roguelike_RPG/*.csproj
+roguelike_RPG/*.sln
+roguelike_RPG/*.slnx
+roguelike_RPG/*.user
+roguelike_RPG/*.pidb
+roguelike_RPG/*.booproj
+roguelike_RPG/*.svd
+roguelike_RPG/*.pdb
+roguelike_RPG/*.mdb
+roguelike_RPG/*.opendb
+roguelike_RPG/*.VC.db
+roguelike_RPG/sysinfo.txt
+roguelike_RPG/crashlytics-build.properties
+
+# Blender 자동 백업
+*.blend1
+*.blend2
+
+# OS
+Thumbs.db
+.DS_Store

@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "unity-mcp": {
+      "command": "C:/Users/KGA01/.unity/relay/relay_win.exe",
+      "args": ["--mcp", "--project-path", "C:/Users/KGA01/roguelike_RPG/roguelike_RPG"]
+    },
+    "blender": {
+      "command": "C:/Users/KGA01/.local/bin/uvx.exe",
+      "args": ["blender-mcp"]
+    },
+    "varco-3d": {
+      "type": "http",
+      "url": "https://3d.varco.ai/api/mcp"
+    }
+  }
+}

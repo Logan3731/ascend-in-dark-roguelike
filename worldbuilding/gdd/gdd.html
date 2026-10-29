@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>기억의 탑 — One-Page GDD</title>
+<link href="https://fonts.googleapis.com/css2?family=East+Sea+Dokdo&family=Nanum+Myeongjo:wght@700;800&family=Noto+Sans+KR:wght@400;500;700;900&display=block" rel="stylesheet">
+<style>
+  :root{--dark:#1C1B1A;--paper:#252320;--line:#3d3934;--text:#E6DCC8;--muted:#A79C88;--beige:#B3A58C;--torch:#F08A2C}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{width:1600px;background:var(--dark);color:var(--text);font-family:'Noto Sans KR',sans-serif;font-size:20px;line-height:1.6}
+  .hero{position:relative;height:560px;overflow:hidden}
+  .hero img{width:100%;height:100%;object-fit:cover;object-position:center 35%}
+  .hero::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(28,27,26,0) 40%,rgba(28,27,26,.97) 100%),linear-gradient(90deg,rgba(28,27,26,.85) 0%,rgba(28,27,26,0) 45%)}
+  .title{position:absolute;left:64px;top:44px;z-index:2}
+  .title h1{font-family:'East Sea Dokdo',cursive;font-size:150px;line-height:.9;color:#efe4cf;font-weight:400;text-shadow:0 0 30px rgba(240,138,44,.35),0 4px 0 #000}
+  .title .tag{display:inline-block;margin-top:18px;font-size:20px;font-weight:700;color:var(--dark);background:var(--torch);padding:6px 16px;border-radius:4px}
+  .hook{position:absolute;left:64px;right:64px;bottom:36px;z-index:2;font-family:'Nanum Myeongjo',serif;font-size:34px;font-weight:800;color:#f3ead8}
+  .hook b{color:var(--torch)}
+
+  .wrap{padding:36px 64px 44px;display:grid;gap:26px}
+  .row{display:grid;gap:26px}
+  .r2{grid-template-columns:1fr 1fr}
+  .card{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:24px 28px}
+  h2{font-size:16px;font-weight:900;letter-spacing:.14em;color:var(--torch);margin-bottom:12px}
+  .big{font-family:'Nanum Myeongjo',serif;font-size:27px;font-weight:800;color:#f3ead8}
+  ul{list-style:none}
+  li{position:relative;padding-left:18px;margin:4px 0}
+  li::before{content:"";position:absolute;left:0;top:.72em;width:7px;height:7px;background:var(--torch);transform:rotate(45deg)}
+  .hl{color:var(--torch);font-weight:700}
+  b{color:#f3ead8}
+
+  .loop{display:flex;align-items:center;gap:10px}
+  .step{flex:1;text-align:center;background:#302d29;border:1px solid #4a453e;border-radius:8px;padding:14px 8px;font-size:22px;font-weight:700;color:#f3ead8}
+  .step small{display:block;font-size:15px;font-weight:400;color:var(--muted);margin-top:2px}
+  .step.d{border-color:var(--torch);background:#3a2a1c}
+  .arrow{color:var(--torch);font-size:28px;font-weight:900}
+  .back{margin-top:12px;color:var(--beige);font-size:18px}
+
+  .pro{display:grid;grid-template-columns:170px 1fr;gap:20px;align-items:center}
+  .pro .img{height:200px;border-radius:8px;background:#111 center/cover no-repeat}
+  .pro h3{font-size:24px;color:#f3ead8;margin-bottom:6px}
+  .pro h3 em{font-style:normal;font-size:14px;font-weight:900;padding:2px 9px;border-radius:3px;margin-left:8px;vertical-align:4px}
+  .evil{background:#5b2a22;color:#f3c9b8}.good{background:#3d4a2c;color:#dfe8c8}
+  .q{font-family:'Nanum Myeongjo',serif;font-weight:800;color:var(--torch);margin-top:6px}
+  .goal{margin-top:16px;font-size:19px}
+
+  .num{display:inline-block;font-weight:900;color:var(--dark);background:var(--beige);border-radius:3px;padding:0 7px;font-size:16px}
+  dl{display:grid;grid-template-columns:90px 1fr;gap:6px 14px}
+  dt{color:var(--torch);font-weight:900}
+  .foot{display:flex;justify-content:space-between;align-items:center;background:#3a2a1c;border:1px solid var(--torch);border-radius:10px;padding:16px 28px;font-size:19px}
+</style>
+</head>
+<body>
+  <section class="hero">
+    <img src="../images/edit7.png" alt="">
+    <div class="title">
+      <h1>기억의 탑</h1>
+      <div class="tag">턴제 로그라이크 RPG · 생존 제작</div>
+    </div>
+    <div class="hook">어둠 속 생존 로그라이크인데, <b>죽을 때마다 '기억'이 쌓여</b> 더 높이 오르는 게임</div>
+  </section>
+
+  <div class="wrap">
+    <div class="row r2">
+      <div class="card"><h2>핵심 테마</h2><div class="big">"모든 걸 잃어도, 기억은 남는다."</div></div>
+      <div class="card"><h2>레퍼런스 게임</h2><div class="big" style="font-size:24px">Darkness Survival <span style="font-family:'Noto Sans KR';font-size:18px;font-weight:400;color:var(--muted)">— 어두운 돌 던전 · 허기 · 제작 생존</span></div></div>
+    </div>
+
+    <div class="card">
+      <h2>세계관 요약</h2>
+      <ul>
+        <li><b>외부와 단절된 거대한 탑.</b> 모든 층은 어두운 미로이고, 횃불 없이는 앞이 거의 보이지 않는다.</li>
+        <li>여러 종족이 살지만 말이 통하는 존재는 없고, 먼저 오르다 실패한 이들의 유품만 남아 있다.</li>
+        <li>깨어날 때 들린 <b>"올라가야 한다…"</b>는 목소리 — 그 주인과 꼭대기의 진실은 엔딩까지 알 수 없다.</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h2>코어 루프</h2>
+      <div class="loop">
+        <div class="step">탐험<small>횃불로 미로 밝히기</small></div><span class="arrow">→</span>
+        <div class="step">채집 · 전투<small>도끼·곡괭이 / 턴제</small></div><span class="arrow">→</span>
+        <div class="step">제작 · 생존<small>장비·횃불 / 허기</small></div><span class="arrow">→</span>
+        <div class="step">상승<small>계단 찾기</small></div><span class="arrow">→</span>
+        <div class="step d">사망<small>기억의 정수만 남음</small></div>
+      </div>
+      <p class="back">↺ 기억의 정수로 영구 강화 후 1층부터 다시 — 죽을수록 더 높이 오른다.</p>
+    </div>
+
+    <div class="card">
+      <h2>주인공 — 기억을 잃은 인간, 남/여 중 선택 · 이름은 플레이어가 입력</h2>
+      <div class="row r2">
+        <div class="pro">
+          <div class="img" style="background-image:url(../images/edit7.png);background-position:84% 30%;background-size:auto 190%"></div>
+          <div>
+            <h3>남자<em class="evil">악</em></h3>
+            <p>대담하지만 호의적이지 않다. 데미지가 강한 대신 시작 옷이 하나뿐.</p>
+            <p class="q">"약한 놈부터 사라지는 거다."</p>
+          </div>
+        </div>
+        <div class="pro">
+          <div class="img" style="background-image:url(../images/char_female_final.webp);background-size:200% auto;background-position:52% 6%"></div>
+          <div>
+            <h3>여자<em class="good">선</em></h3>
+            <p>정의롭지만 위험해도 무조건 돕는다. 데미지가 약한 대신 시작 장비가 더 많다.</p>
+            <p class="q">"굶주렸군요. 이거라도 드세요."</p>
+          </div>
+        </div>
+      </div>
+      <p class="goal"><span class="hl">목표</span> 탑을 올라 출구를 찾는다 &nbsp;·&nbsp; <span class="hl">결핍</span> 잃어버린 기억과 자신이 누구인지</p>
+    </div>
+
+    <div class="row r2">
+      <div class="card">
+        <h2>핵심 시스템</h2>
+        <ul>
+          <li><b>허기</b> — 동물 사냥·상자 파밍·자판기(골드)로 식량을 구해 채운다.</li>
+          <li><b>내구도 제작</b> — 도구 = 무기, 횃불도 닳으면 파괴.</li>
+          <li><b>턴제 전투</b> — HP/MP, 스킬은 두루마리로 배우고 MP 소모.</li>
+          <li><b>선/악 선택</b> — 굶주린 고블린에게 <span class="num">식량 −1</span> 나눠주면 조력자, 처치하면 <span class="num">골드 +25</span> 대신 적대.</li>
+          <li><b>기억의 정수</b> — 죽으면 전부 초기화, 정수만 남아 영구 강화.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h2>에셋 리스트</h2>
+        <dl>
+          <dt>캐릭터</dt><dd>주인공 남/여, 고블린, 적(엘프·슬라임·벌레·암석거인), 초식동물</dd>
+          <dt>배경</dt><dd>1층 거대한 문, 돌 미로 타일셋, 테마 층(숲·유적·늪)</dd>
+          <dt>오브젝트</dt><dd>나무·광석, 아이템 상자, 자판기, 두루마리</dd>
+          <dt>UI</dt><dd>HP·MP·허기 바, 횃불 시야, 인벤토리·제작 창, 선택지 창</dd>
+          <dt>사운드</dt><dd>횃불 타는 소리, 발소리 울림, 전투 SFX, 앰비언트 BGM</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="foot"><span><span class="hl">첫 구현 목표</span> &nbsp;1층 + 미로 2~3층에서 횃불·채집·제작·턴제 전투·사망 후 재시작 루프 1회 완주</span></div>
+  </div>
+</body>
+</html>
