@@ -107,6 +107,7 @@ GameObject:
   m_Component:
   - component: {fileID: 7711978097251495126}
   - component: {fileID: 4120885348475430757}
+  - component: {fileID: 8136298551387608996}
   m_Layer: 0
   m_Name: P_Player
   m_TagString: Untagged
@@ -145,6 +146,29 @@ MonoBehaviour:
   moveSeconds: 0.55
   targetMarker: {fileID: 0}
   animator: {fileID: 3095530516904889648}
+--- !u!114 &8136298551387608996
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6990359101868098396}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 836d9121eadc929448f67a4e77ee51a5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerStats
+  maxHp: 100
+  maxMp: 30
+  maxHunger: 100
+  hungerPerTurn: 1
+  starveDamage: 3
+  hungryWarnAt: 30
+  maxTorch: 120
+  torchPerTurn: 1
+  torchWarnAt: 20
+  torchLight: {fileID: 2230098362653279921}
+  torchFlame: {fileID: 8986363443830178483}
 --- !u!1 &7428384430664398176
 GameObject:
   m_ObjectHideFlags: 0

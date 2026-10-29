@@ -15,14 +15,22 @@ public class GridClickMover : MonoBehaviour
 
     readonly Queue<Vector2Int> path = new Queue<Vector2Int>();
     bool moving;
+    PlayerStats stats;
 
     void Start()
     {
+        stats = GetComponent<PlayerStats>();
         if (targetMarker != null) targetMarker.SetActive(false);
     }
 
     void Update()
     {
+        if (stats != null && stats.Dead)
+        {
+            path.Clear();
+            return;
+        }
+
         if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
             HandleClick();
 
