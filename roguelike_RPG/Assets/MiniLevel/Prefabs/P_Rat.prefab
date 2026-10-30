@@ -75,6 +75,7 @@ MonoBehaviour:
   splitOnDeath: 0
   goldMin: 0
   goldMax: 3
+  expReward: 2
 --- !u!1001 &6130481605785273484
 PrefabInstance:
   m_ObjectHideFlags: 0

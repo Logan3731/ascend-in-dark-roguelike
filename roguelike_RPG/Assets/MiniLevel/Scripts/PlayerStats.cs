@@ -37,7 +37,8 @@ public class PlayerStats : MonoBehaviour
     public int Food { get; private set; }
     public int Gold { get; private set; }
     public bool HasTools { get; private set; }
-    public int Karma { get; private set; }   // + 선 / - 악 (플레이어에게는 숨김)
+    public int Karma => TowerMemory.Karma;   // + 선 / - 악, 복제가 바뀌어도 쌓인다 (플레이어에게는 숨김)
+    public int Exp { get; private set; }     // 이번 생에서 쌓은 전투 경험 -> 죽으면 경험의 정수가 된다
     public bool Dead => Hp <= 0;
     public int PoisonTurns { get; private set; }
 
@@ -69,9 +70,11 @@ public class PlayerStats : MonoBehaviour
     }
 
     public event Action OnChanged;
+    public event Action OnDied;
 
     void Awake()
     {
+        ApplyUpgrades();
         Hp = maxHp; Mp = maxMp; Hunger = maxHunger; Food = startFood;
 
         // 횃불은 손뼈 아래에 있어서 직렬화 참조가 깨지기 쉽다 -> 실행 시 자식에서 찾는다
@@ -81,6 +84,17 @@ public class PlayerStats : MonoBehaviour
             torchFlame = FindChild("Flame");
         if (torchStick == null || torchStick.scene != gameObject.scene)
             torchStick = FindChild("TorchStick");
+    }
+
+    // 경험의 정수로 산 강화를 이번 복제에 적용
+    void ApplyUpgrades()
+    {
+        maxHp += 10 * TowerMemory.Level(TowerMemory.Upgrade.MaxHp);
+        strength += TowerMemory.Level(TowerMemory.Upgrade.Strength);
+        int fist = TowerMemory.Level(TowerMemory.Upgrade.Fist);
+        fistMin += fist; fistMax += fist;
+        maxHunger += 15 * TowerMemory.Level(TowerMemory.Upgrade.Hunger);
+        startFood += TowerMemory.Level(TowerMemory.Upgrade.StartFood);
     }
 
     GameObject FindChild(string childName)
@@ -142,7 +156,7 @@ public class PlayerStats : MonoBehaviour
         if (Dead)
         {
             GameLog.Add("당신은 쓰러졌다. 경험이 탑에 스며든다…", GameLog.Bad);
-            GameLog.Add("[R] 다시 시작", GameLog.Info);
+            OnDied?.Invoke();
         }
         OnChanged?.Invoke();
     }
@@ -160,7 +174,8 @@ public class PlayerStats : MonoBehaviour
 
     public void AddFood(int amount) { Food = Mathf.Max(0, Food + amount); OnChanged?.Invoke(); }
     public void AddGold(int amount) { Gold = Mathf.Max(0, Gold + amount); OnChanged?.Invoke(); }
-    public void AddKarma(int amount) { Karma += amount; Debug.Log($"[Karma] {Karma}"); }
+    public void AddKarma(int amount) { TowerMemory.AddKarma(amount); Debug.Log($"[Karma] {Karma}"); }
+    public void AddExp(int amount) { Exp += amount; OnChanged?.Invoke(); }
     public void GiveTools() { HasTools = true; OnChanged?.Invoke(); }
 
     // 새 횃불을 얻는다 (아직 들지는 않은 상태)

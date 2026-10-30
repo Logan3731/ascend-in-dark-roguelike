@@ -25,6 +25,12 @@ public static class GameLog
         OnChanged?.Invoke();
     }
 
+    public static void Clear()
+    {
+        lines.Clear();
+        OnChanged?.Invoke();
+    }
+
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
     static void ResetOnPlay()
     {

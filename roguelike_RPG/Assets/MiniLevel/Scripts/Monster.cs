@@ -27,6 +27,7 @@ public class Monster : Interactable
 
     [Header("처치 보상")]
     public int goldMin = 0, goldMax = 3;
+    public int expReward = 2;                              // 쓰러뜨리면 쌓이는 전투 경험 (죽으면 경험의 정수)
 
     public int MaxHp { get; private set; }
     public int Hp { get; private set; }
@@ -82,6 +83,7 @@ public class Monster : Interactable
         Strength = Mathf.Max(1, parent.Strength / 2);
         goldMin = parent.goldMin / 2;
         goldMax = Mathf.Max(goldMin, parent.goldMax / 2);
+        expReward = Mathf.Max(1, parent.expReward / 2);
         awake = true;
         transform.localScale = parent.transform.localScale * 0.7f;
         if (Visual != null) { visualHome = parent.visualHome; Visual.localPosition = visualHome; }
@@ -134,12 +136,11 @@ public class Monster : Interactable
         }
 
         GameLog.Add($"{displayName}에게 {amount}의 피해. {displayName}{Josa("을", "를")} 쓰러뜨렸다.", GameLog.Good);
+        int exp = expReward + (level - 1);
+        player.AddExp(exp);
         int gold = Random.Range(goldMin, goldMax + 1) + (level - 1);
-        if (gold > 0)
-        {
-            player.AddGold(gold);
-            GameLog.Add($"골드 +{gold}", GameLog.Good);
-        }
+        if (gold > 0) player.AddGold(gold);
+        GameLog.Add(gold > 0 ? $"경험 +{exp}   골드 +{gold}" : $"경험 +{exp}", GameLog.Good);
         if (splitOnDeath && !isSplitChild) Split();
         enabled = false;
         if (bar != null) Destroy(bar.gameObject);

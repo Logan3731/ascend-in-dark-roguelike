@@ -14,6 +14,9 @@ public static class TurnManager
         OnTurnEnded?.Invoke(Turn);
     }
 
+    // 새로 깨어날 때(씬을 다시 열 때) 턴 수를 0으로
+    public static void ResetTurn() => Turn = 0;
+
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
     static void ResetOnPlay()
     {

@@ -56,9 +56,10 @@ public class HUD : MonoBehaviour
     void RefreshBars()
     {
         if (stats == null) return;
-        nameText.text = stats.PoisonTurns > 0 ? $"{stats.PlayerName}   <color=#8fd14f>중독 {stats.PoisonTurns}</color>" : stats.PlayerName;
+        string who = string.IsNullOrEmpty(stats.PlayerName) ? $"{TowerMemory.RunCount}번째 깨어남" : stats.PlayerName;
+        nameText.text = stats.PoisonTurns > 0 ? $"{who}   <color=#8fd14f>중독 {stats.PoisonTurns}</color>" : who;
         string torch = !stats.HasTorch ? "없음" : stats.TorchHeld ? "듦" : "안 듦";
-        invText.text = $"공격 {stats.AttackMin}~{stats.AttackMax}    힘 {stats.Strength}    식량 {stats.Food}    골드 {stats.Gold}    횃불 {torch}";
+        invText.text = $"공격 {stats.AttackMin}~{stats.AttackMax}    힘 {stats.Strength}    경험 {stats.Exp}    식량 {stats.Food}    골드 {stats.Gold}    횃불 {torch}";
         SetBar(hpFill, hpText, stats.Hp, stats.maxHp);
         SetBar(mpFill, mpText, stats.Mp, stats.maxMp);
         SetBar(hungerFill, hungerText, stats.Hunger, stats.maxHunger);

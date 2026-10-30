@@ -31,9 +31,6 @@ public class GridClickMover : MonoBehaviour
         if (stats != null && stats.Dead)
         {
             path.Clear();
-            // 사망·재시작(경험의 정수)이 생기기 전까지 임시로 R로 씬을 다시 연다
-            if (Keyboard.current != null && Keyboard.current.rKey.wasPressedThisFrame)
-                UnityEngine.SceneManagement.SceneManager.LoadScene(gameObject.scene.name);
             return;
         }
         if (DialogUI.IsOpen) return;
