@@ -7,7 +7,8 @@ using UnityEngine.InputSystem;
 // 바닥 칸을 클릭하면 그 칸을 목표로 정하고 한 칸씩 이동한다. 한 칸 = 한 턴.
 // 한 칸 갈 때마다 목표까지의 길을 다시 찾는다 (그새 몬스터가 움직였을 수 있으므로).
 // 상호작용 대상을 클릭하면 그 옆까지 걸어가서 상호작용한다. [F] 횃불 들기/내리기, [E] 식량 먹기.
-// 걷는 중이거나 공격·연출이 끝나기 전에는 클릭을 받지 않는다.
+// 걷는 중에 다른 곳을 누르면 목표만 바뀌고, 지금 걷는 한 칸을 마친 뒤 방향을 튼다.
+// 공격·연출이 끝나기 전에는 다음 행동을 하지 않는다.
 public class GridClickMover : MonoBehaviour
 {
     public float moveSeconds = 0.15f;
@@ -19,6 +20,7 @@ public class GridClickMover : MonoBehaviour
 
     PlayerStats stats;
     bool stepping;               // 한 칸 이동 중
+    Vector2Int stepCell;         // 지금 걷고 있는 한 칸의 도착 칸
     Vector2Int? goalCell;        // 걸어가는 목표 칸
     Interactable goalTarget;     // 다가가서 상호작용할 대상
     Transform model;             // 공격 연출용 모델 (첫 번째 자식)
@@ -38,9 +40,15 @@ public class GridClickMover : MonoBehaviour
     void Update()
     {
         if (stats != null && stats.Dead) { ClearGoal(); return; }
-        if (DialogUI.IsOpen || Busy) return;
+        if (DialogUI.IsOpen) return;
 
-        // 목표가 있으면 한 칸 진행 (그동안 클릭은 무시)
+        // 클릭은 언제든 받아서 목표만 바꿔 둔다. 실제 방향 전환은 지금 걷는 한 칸을 마친 뒤에 한다.
+        if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame && !PointerOverUI())
+            HandleClick();
+
+        if (Busy) return;
+
+        // 목표가 있으면 한 칸 진행
         if (HasGoal)
         {
             Advance();
@@ -53,10 +61,10 @@ public class GridClickMover : MonoBehaviour
             if (kb.fKey.wasPressedThisFrame) stats.ToggleTorch();
             if (kb.eKey.wasPressedThisFrame) stats.EatFood();
         }
-
-        if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame && !PointerOverUI())
-            HandleClick();
     }
+
+    // 지금 서 있는 칸 (걷는 중이면 도착할 칸)
+    Vector2Int CurrentCell => stepping ? stepCell : GridTile.WorldToCell(transform.position);
 
     static bool PointerOverUI() => EventSystem.current != null && EventSystem.current.IsPointerOverGameObject();
 
@@ -72,9 +80,9 @@ public class GridClickMover : MonoBehaviour
             var target = hit.collider.GetComponentInParent<Interactable>();
             if (target != null && !target.triggerOnEnter && target.isActiveAndEnabled)
             {
+                goalCell = null;
                 goalTarget = target;
                 ShowMarker(target.Cell);
-                Advance();
                 return;
             }
         }
@@ -86,11 +94,17 @@ public class GridClickMover : MonoBehaviour
 
     public void SetDestination(Vector2Int goal)
     {
-        var here = GridTile.WorldToCell(transform.position);
-        if (goal == here || FindPath(here, c => c == goal) == null) return;
+        var here = CurrentCell;
+        if (goal == here)
+        {
+            // 걷는 중에 내 자리를 누르면 이번 칸에서 멈춘다
+            if (HasGoal) { goalTarget = null; goalCell = here; ShowMarker(here); }
+            return;
+        }
+        if (FindPath(here, c => c == goal) == null) return;
+        goalTarget = null;
         goalCell = goal;
         ShowMarker(goal);
-        Advance();
     }
 
     // 목표를 다시 확인하고 한 칸만 움직이거나, 도착했으면 상호작용한다
@@ -112,7 +126,7 @@ public class GridClickMover : MonoBehaviour
             var route = FindPath(here, c => IsNextTo(c, target.Cell));
             if (route == null || route.Count == 0) { ClearGoal(); return; }
             ShowMarker(target.Cell);
-            StartCoroutine(Step(route[0], IsNextTo(route[0], target.Cell)));
+            StartCoroutine(Step(route[0]));
             return;
         }
 
@@ -122,7 +136,7 @@ public class GridClickMover : MonoBehaviour
             if (here == goal) { ClearGoal(); return; }
             var route = FindPath(here, c => c == goal);
             if (route == null || route.Count == 0) { ClearGoal(); return; }
-            StartCoroutine(Step(route[0], route[0] == goal));
+            StartCoroutine(Step(route[0]));
         }
     }
 
@@ -206,9 +220,17 @@ public class GridClickMover : MonoBehaviour
         model.localPosition = modelHome;
     }
 
-    IEnumerator Step(Vector2Int cell, bool lastStep)
+    // 이 칸에 도착하면 걷기를 끝내는가 (걷는 도중 목표가 바뀔 수 있어서 매번 지금 목표로 판단)
+    bool IsFinalStep(Vector2Int cell)
+    {
+        if (goalTarget != null) return IsNextTo(cell, goalTarget.Cell);
+        return goalCell == null || goalCell.Value == cell;
+    }
+
+    IEnumerator Step(Vector2Int cell)
     {
         stepping = true;
+        stepCell = cell;
         TurnResolver.BeginTurn(cell, moveSeconds);   // 몬스터도 같은 시간에 움직인다
         if (animator != null) animator.SetBool(MovingParam, true);
         var from = transform.position;
@@ -220,7 +242,7 @@ public class GridClickMover : MonoBehaviour
         {
             transform.position = Vector3.Lerp(from, to, t);
             // 마지막 칸이면 도착 직전에 미리 멈춤 동작으로 넘긴다 (도착 후 걸음이 늦게 끝나지 않도록)
-            if (lastStep && t > 0.8f && animator != null) animator.SetBool(MovingParam, false);
+            if (t > 0.8f && animator != null && IsFinalStep(cell)) animator.SetBool(MovingParam, false);
             yield return null;
         }
         transform.position = to;
@@ -232,7 +254,7 @@ public class GridClickMover : MonoBehaviour
 
         // 바닥으로 걸어가던 중 공격을 받았으면 멈춰서 상황을 보게 한다 (대상에게 다가가던 중이면 계속)
         if (TurnResolver.AttackedThisTurn && goalTarget == null) ClearGoal();
-        if (lastStep || !HasGoal)
+        if (IsFinalStep(cell) || !HasGoal)
         {
             if (animator != null) animator.SetBool(MovingParam, false);
             if (goalCell != null && GridTile.WorldToCell(transform.position) == goalCell) ClearGoal();
