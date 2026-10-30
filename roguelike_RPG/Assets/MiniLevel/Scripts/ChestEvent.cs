@@ -16,6 +16,7 @@ public class ChestEvent : Interactable
     {
         if (Used) return;
         Used = true;
+        TurnResolver.BusyUntil = Mathf.Max(TurnResolver.BusyUntil, Time.time + 0.7f);   // 뚜껑이 열리고 창이 뜰 때까지 대기
         StartCoroutine(Open(player));
     }
 

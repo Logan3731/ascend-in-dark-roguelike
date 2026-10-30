@@ -110,8 +110,8 @@ public class Monster : Interactable
             TakeDamage(player.RollAttack(), player, delay);
     }
 
-    // 차례가 와서 플레이어를 공격한다
-    public void AttackPlayer(PlayerStats player, float delay)
+    // 차례가 와서 플레이어를 공격한다. 연출에 쓴 시간(다음 공격까지 간격)을 돌려준다.
+    public float AttackPlayer(PlayerStats player, float delay)
     {
         StartCoroutine(Lunge(player.transform.position, delay));
         HitPlayer(player);
@@ -120,7 +120,9 @@ public class Monster : Interactable
             GameLog.Add($"{displayName}{Josa("이", "가")} 한 번 더 덤벼든다!", GameLog.Bad);
             StartCoroutine(Lunge(player.transform.position, delay + TurnResolver.AttackGap));
             HitPlayer(player);
+            return TurnResolver.AttackGap * 2f;
         }
+        return TurnResolver.AttackGap;
     }
 
     void TakeDamage(int amount, PlayerStats player, float delay)
