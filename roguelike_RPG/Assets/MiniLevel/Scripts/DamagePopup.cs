@@ -5,11 +5,12 @@ using UnityEngine.UI;
 // 머리 위로 떠올랐다가 사라지는 숫자 (피해량, 빗나감, 회복 등). 항상 카메라를 향한다.
 public class DamagePopup : MonoBehaviour
 {
-    public static readonly Color Hit = new Color(1f, 0.92f, 0.6f);        // 내가 준 피해
-    public static readonly Color Big = new Color(1f, 0.6f, 0.15f);        // 최대치로 때림
+    public static readonly Color Hit = new Color(0.95f, 0.93f, 0.9f);     // 내가 준 피해 (흰색)
+    public static readonly Color Big = new Color(1f, 0.82f, 0.25f);       // 최대치로 때림 (노랑)
     public static readonly Color Hurt = new Color(1f, 0.3f, 0.25f);       // 내가 받은 피해
     public static readonly Color Miss = new Color(0.7f, 0.7f, 0.7f);
-    public static readonly Color Heal = new Color(0.55f, 0.9f, 0.4f);
+    public static readonly Color Heal = new Color(0.91f, 0.76f, 0.48f);   // 먹기 (밀빛, 독의 초록과 구분)
+    public static readonly Color Starve = new Color(0.88f, 0.38f, 0.29f); // 굶주림 피해 (빨강 계열 + 글자)
     public static readonly Color Poison = new Color(0.6f, 0.85f, 0.25f);
 
     Text text;
