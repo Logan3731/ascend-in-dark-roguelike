@@ -2,7 +2,7 @@ using System.Collections;
 using UnityEngine;
 
 // 1층에서 깨어날 때: 새 회차를 기록하고, 앞서 쓰러진 자들의 뼈를 놓고, "…올라가야 한다."가 떠오른다.
-// 이름 입력은 지금은 꺼 둔다 (askName).
+// 타이틀 화면이 떠 있으면 [깨어나기]를 누를 때까지 기다린다. 이름 입력은 지금은 꺼 둔다 (askName).
 public class IntroSequence : MonoBehaviour
 {
     public PlayerStats player;
@@ -10,12 +10,23 @@ public class IntroSequence : MonoBehaviour
     public bool askName = false;
     public string defaultName = "이름 없는 자";
 
+    bool started;
+
     void Awake()
     {
+        if (!TitleScreen.ShouldShow) StartRun();
+    }
+
+    public void StartRun()
+    {
+        if (started) return;
+        started = true;
         TowerMemory.BeginRun();
         TurnManager.ResetTurn();
         GameLog.Clear();
         SpawnBones();
+        if (player != null) player.AddFood(0);   // HUD에 회차 표시 갱신
+        StartCoroutine(Intro());
     }
 
     void SpawnBones()
@@ -30,7 +41,7 @@ public class IntroSequence : MonoBehaviour
         }
     }
 
-    IEnumerator Start()
+    IEnumerator Intro()
     {
         yield return new WaitForSeconds(0.5f);
         if (!askName)

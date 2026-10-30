@@ -16,6 +16,7 @@ public class InventoryUI : MonoBehaviour
     public PlayerStats player;
 
     public static bool IsOpen => instance != null && instance.root.activeSelf;
+    public static int EscFrame { get; private set; } = -1;   // 이 프레임의 Esc는 소지품이 썼다 (일시정지가 같이 열리지 않게)
     static InventoryUI instance;
 
     public static readonly Color SlotColor = new Color(0.13f, 0.11f, 0.09f, 1f);
@@ -73,6 +74,7 @@ public class InventoryUI : MonoBehaviour
         {
             if (kb.escapeKey.wasPressedThisFrame)
             {
+                EscFrame = Time.frameCount;
                 if (held != null) ReturnHeld(false);
                 else if (confirm.activeSelf) CloseConfirm();
                 else Close();
@@ -83,7 +85,7 @@ public class InventoryUI : MonoBehaviour
             if (held != null && returning == null) heldIcon.rectTransform.anchoredPosition = mouse;
             if (tooltip.gameObject.activeSelf) PlaceNearMouse(tooltip, mouse);
         }
-        else if ((kb.iKey.wasPressedThisFrame || kb.tabKey.wasPressedThisFrame) && !DialogUI.IsOpen && !player.Dead) Open();
+        else if ((kb.iKey.wasPressedThisFrame || kb.tabKey.wasPressedThisFrame) && !DialogUI.IsOpen && !PauseMenu.IsOpen && !TitleScreen.IsOpen && !player.Dead) Open();
     }
 
     public void Open()

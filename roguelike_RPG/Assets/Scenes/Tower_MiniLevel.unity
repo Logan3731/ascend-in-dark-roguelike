@@ -16867,6 +16867,8 @@ GameObject:
   - component: {fileID: 2000106796}
   - component: {fileID: 2000106797}
   - component: {fileID: 2000106798}
+  - component: {fileID: 2000106800}
+  - component: {fileID: 2000106799}
   m_Layer: 0
   m_Name: HUD
   m_TagString: Untagged
@@ -16971,6 +16973,34 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::ScreenEffects
   player: {fileID: 1538796694}
   lowHpRatio: 0.3
+--- !u!114 &2000106799
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2000106791}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 35d5c9589f115c640b9671537be09319, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PauseMenu
+  player: {fileID: 1538796694}
+--- !u!114 &2000106800
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2000106791}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 60e41fcb960556d468036cd20efcef1e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::TitleScreen
+  gameTitle: Ascend in Dark
+  tagline: "\uBAA8\uB4E0 \uAC78 \uC783\uC5B4\uB3C4, \uACBD\uD5D8\uC740 \uB0A8\uB294\uB2E4"
+  intro: {fileID: 2000106794}
 --- !u!1001 &2007529880
 PrefabInstance:
   m_ObjectHideFlags: 0

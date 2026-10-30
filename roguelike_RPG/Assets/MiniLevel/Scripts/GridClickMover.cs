@@ -40,7 +40,7 @@ public class GridClickMover : MonoBehaviour
     void Update()
     {
         if (stats != null && stats.Dead) { ClearGoal(); return; }
-        if (DialogUI.IsOpen || InventoryUI.IsOpen) return;
+        if (DialogUI.IsOpen || InventoryUI.IsOpen || PauseMenu.IsOpen || TitleScreen.IsOpen) return;
 
         // 클릭은 언제든 받아서 목표만 바꿔 둔다. 실제 방향 전환은 지금 걷는 한 칸을 마친 뒤에 한다.
         if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame && !PointerOverUI())
