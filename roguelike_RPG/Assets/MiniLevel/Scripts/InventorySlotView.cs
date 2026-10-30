@@ -3,13 +3,24 @@ using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
-// 상태창·소지품의 아이템 칸 하나: 아이콘 + 개수, 마우스 올림/클릭
-public class InventorySlotView : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IPointerClickHandler
+// 상태창·소지품의 아이템 칸 하나: 아이콘 + 개수. 마우스 올림/클릭/끌기를 InventoryUI에 알린다.
+public class InventorySlotView : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IPointerClickHandler,
+    IBeginDragHandler, IDragHandler, IEndDragHandler
 {
     public ItemDef def;
-    public Action onClick, onHover;
+    public Action onClick, onEnter, onExit, onBeginDrag;
+    public Action<PointerEventData> onEndDrag;
+
+    static readonly Color OutlineNormal = new Color(0.4f, 0.33f, 0.24f, 0.7f);
+    static readonly Color OutlineGlow = new Color(1f, 0.82f, 0.35f, 1f);
+    static readonly Color GlowBg = new Color(0.32f, 0.25f, 0.1f, 1f);
+
     Image bg, icon;
+    Outline outline;
     Text count, nameText, emptyLabel;
+    bool highlighted;
+
+    public RectTransform Rect => (RectTransform)transform;
 
     public static InventorySlotView Create(RectTransform parent, Font font, float x, float y, float size)
     {
@@ -22,8 +33,8 @@ public class InventorySlotView : MonoBehaviour, IPointerEnterHandler, IPointerEx
         var v = go.AddComponent<InventorySlotView>();
         v.bg = go.GetComponent<Image>();
         v.bg.color = InventoryUI.SlotColor;
-        var ol = go.AddComponent<Outline>();
-        ol.effectColor = new Color(0.4f, 0.33f, 0.24f, 0.7f);
+        v.outline = go.AddComponent<Outline>();
+        v.outline.effectColor = OutlineNormal;
 
         v.icon = new GameObject("Icon", typeof(Image)).GetComponent<Image>();
         v.icon.transform.SetParent(r, false);
@@ -65,9 +76,28 @@ public class InventorySlotView : MonoBehaviour, IPointerEnterHandler, IPointerEx
         nameText.text = item != null && sprite == null ? item.name : "";
         emptyLabel.enabled = item == null;
         count.text = item != null && n > 1 ? n.ToString() : "";
+        SetLifted(false);
     }
 
-    public void OnPointerEnter(PointerEventData e) { bg.color = InventoryUI.SlotHover; onHover?.Invoke(); }
-    public void OnPointerExit(PointerEventData e) { bg.color = InventoryUI.SlotColor; }
-    public void OnPointerClick(PointerEventData e) { onClick?.Invoke(); }
+    // 이 칸에 장비를 넣을 수 있으면 금색 테두리로 표시
+    public void SetHighlight(bool on)
+    {
+        highlighted = on;
+        bg.color = on ? GlowBg : InventoryUI.SlotColor;
+        outline.effectColor = on ? OutlineGlow : OutlineNormal;
+        outline.effectDistance = on ? new Vector2(3, -3) : new Vector2(1, -1);
+    }
+
+    // 들어 올린 아이템의 원래 자리는 흐리게
+    public void SetLifted(bool lifted)
+    {
+        var c = icon.color; c.a = lifted ? 0.25f : 1f; icon.color = c;
+    }
+
+    public void OnPointerEnter(PointerEventData e) { bg.color = InventoryUI.SlotHover; onEnter?.Invoke(); }
+    public void OnPointerExit(PointerEventData e) { bg.color = highlighted ? GlowBg : InventoryUI.SlotColor; onExit?.Invoke(); }
+    public void OnPointerClick(PointerEventData e) { if (e.button == PointerEventData.InputButton.Left) onClick?.Invoke(); }
+    public void OnBeginDrag(PointerEventData e) { onBeginDrag?.Invoke(); }
+    public void OnDrag(PointerEventData e) { }   // 끌기 이벤트를 받으려면 필요
+    public void OnEndDrag(PointerEventData e) { onEndDrag?.Invoke(e); }
 }
