@@ -30,13 +30,15 @@ public class PlayerStats : MonoBehaviour
     public int Hp { get; private set; }
     public int Mp { get; private set; }
     public int Hunger { get; private set; }
-    public int Torch { get; private set; }
-    public bool HasTorch { get; private set; }
+    public int Torch { get; private set; }            // 지금 쓰는 횃불 한 자루의 남은 내구도
+    public bool HasTorch => Bag.Count(Items.Torch) > 0;
     public bool TorchHeld { get; private set; }
     public bool TorchLit => HasTorch && TorchHeld && Torch > 0;
-    public int Food { get; private set; }
+    public int Food => Bag.Count(Items.Food);
     public int Gold { get; private set; }
-    public bool HasTools { get; private set; }
+    public bool HasTools => Bag.Count(Items.Axe) > 0 && Bag.Count(Items.Pickaxe) > 0;
+    public readonly Inventory Bag = new Inventory();   // 가방 + 장비
+    public ItemDef Weapon => Bag.Equipped(EquipSlot.Weapon);
     public int Karma => TowerMemory.Karma;   // + 선 / - 악, 복제가 바뀌어도 쌓인다 (플레이어에게는 숨김)
     public int Exp { get; private set; }     // 이번 생에서 쌓은 전투 경험 -> 죽으면 경험의 정수가 된다
     public bool Dead => Hp <= 0;
@@ -48,15 +50,14 @@ public class PlayerStats : MonoBehaviour
 
     [Header("공격력 (최소~최대, 매번 무작위)")]
     public int fistMin = 1, fistMax = 2;
-    public int axeMin = 2, axeMax = 7;           // 도끼를 들면 맨손 + 도끼 = 3~9
-
-    public int AttackMin => fistMin + (HasTools ? axeMin : 0);
-    public int AttackMax => fistMax + (HasTools ? axeMax : 0);
+    // 무기를 장착하면 맨손 + 무기 (예: 낡은 도끼 2~7 -> 3~9)
+    public int AttackMin => fistMin + (Weapon != null ? Weapon.attackMin : 0);
+    public int AttackMax => fistMax + (Weapon != null ? Weapon.attackMax : 0);
 
     public int RollAttack()
     {
         int dmg = UnityEngine.Random.Range(fistMin, fistMax + 1);
-        if (HasTools) dmg += UnityEngine.Random.Range(axeMin, axeMax + 1);
+        if (Weapon != null) dmg += UnityEngine.Random.Range(Weapon.attackMin, Weapon.attackMax + 1);
         return dmg;
     }
 
@@ -75,7 +76,10 @@ public class PlayerStats : MonoBehaviour
     void Awake()
     {
         ApplyUpgrades();
-        Hp = maxHp; Mp = maxMp; Hunger = maxHunger; Food = startFood;
+        Hp = maxHp; Mp = maxMp; Hunger = maxHunger;
+        Bag.EquipDirect(Items.Tunic);          // 남자 주인공: 누더기 튜닉 하나로 시작
+        Bag.Add(Items.Food, startFood);
+        Bag.OnChanged += () => OnChanged?.Invoke();
 
         // 횃불은 손뼈 아래에 있어서 직렬화 참조가 깨지기 쉽다 -> 실행 시 자식에서 찾는다
         if (torchLight == null || torchLight.gameObject.scene != gameObject.scene)
@@ -140,9 +144,10 @@ public class PlayerStats : MonoBehaviour
             if (t > torchWarnAt && Torch <= torchWarnAt) GameLog.Add("횃불이 곧 꺼질 것 같다.", GameLog.Warn);
             if (Torch == 0)
             {
-                GameLog.Add("횃불이 꺼졌다.", GameLog.Bad);
-                HasTorch = false;
+                GameLog.Add("횃불이 다 타서 사라졌다.", GameLog.Bad);
+                Bag.Remove(Items.Torch);
                 TorchHeld = false;
+                if (HasTorch) { Torch = maxTorch; GameLog.Add("[F] 다음 횃불을 들 수 있다.", GameLog.Info); }
                 ApplyTorchVisual();
             }
         }
@@ -165,24 +170,34 @@ public class PlayerStats : MonoBehaviour
     public void EatFood()
     {
         if (Dead) return;
-        if (Food <= 0) { GameLog.Add("먹을 것이 없다.", GameLog.Info); return; }
-        Food--;
+        if (!Bag.Remove(Items.Food)) { GameLog.Add("먹을 것이 없다.", GameLog.Info); return; }
         Hunger = Mathf.Min(maxHunger, Hunger + foodRestore);
         GameLog.Add("배를 채웠다.", GameLog.Good);
         OnChanged?.Invoke();
     }
 
-    public void AddFood(int amount) { Food = Mathf.Max(0, Food + amount); OnChanged?.Invoke(); }
+    public void AddFood(int amount)
+    {
+        if (amount > 0 && !Bag.Add(Items.Food, amount)) GameLog.Add("가방이 가득 찼다.", GameLog.Warn);
+        else if (amount < 0) Bag.Remove(Items.Food, Mathf.Min(-amount, Food));
+        OnChanged?.Invoke();
+    }
     public void AddGold(int amount) { Gold = Mathf.Max(0, Gold + amount); OnChanged?.Invoke(); }
     public void AddKarma(int amount) { TowerMemory.AddKarma(amount); Debug.Log($"[Karma] {Karma}"); }
     public void AddExp(int amount) { Exp += amount; OnChanged?.Invoke(); }
-    public void GiveTools() { HasTools = true; OnChanged?.Invoke(); }
+    // 입구의 곡괭이와 도끼: 도끼는 무기 칸에 바로 장착
+    public void GiveTools()
+    {
+        Bag.Add(Items.Pickaxe);
+        if (Weapon == null) Bag.EquipDirect(Items.Axe); else Bag.Add(Items.Axe);
+        OnChanged?.Invoke();
+    }
 
     // 새 횃불을 얻는다 (아직 들지는 않은 상태)
     public void GiveTorch()
     {
-        HasTorch = true;
-        Torch = maxTorch;
+        if (!HasTorch) Torch = maxTorch;
+        Bag.Add(Items.Torch);
         ApplyTorchVisual();
         OnChanged?.Invoke();
     }

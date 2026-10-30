@@ -196,12 +196,7 @@ public class Monster : Interactable
     }
 
     // 이름 끝 글자의 받침에 맞는 조사 (쥐가 / 늑대를 / 슬라임이)
-    string Josa(string withBatchim, string without)
-    {
-        char c = displayName[displayName.Length - 1];
-        if (c < 0xAC00 || c > 0xD7A3) return without;
-        return (c - 0xAC00) % 28 > 0 ? withBatchim : without;
-    }
+    string Josa(string withBatchim, string without) => Korean.Josa(displayName, withBatchim, without);
 
     // ---- 이동 ----
 

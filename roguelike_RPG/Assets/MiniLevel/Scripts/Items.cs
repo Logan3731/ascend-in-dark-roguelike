@@ -1,0 +1,145 @@
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+
+public enum ItemKind { Food, Torch, Tool, Equipment }
+
+// 장비 칸: 모자 / 상의 / 하의 / 신발 / 무기. 상하의(일체형)는 상의·하의 두 칸을 함께 차지한다.
+public enum EquipSlot { None, Hat, Top, Bottom, TopBottom, Shoes, Weapon }
+
+public class ItemDef
+{
+    public string id, name, desc;
+    public ItemKind kind;
+    public EquipSlot slot;
+    public bool stackable;
+    public int attackMin, attackMax;     // 무기일 때 더해지는 공격력
+
+    Sprite icon;
+    public Sprite Icon => icon != null ? icon : (icon = Resources.Load<Sprite>("Icons/" + id));
+}
+
+// 게임에 나오는 아이템 목록
+public static class Items
+{
+    public static readonly ItemDef Food = new ItemDef
+    {
+        id = "food", name = "식량", kind = ItemKind.Food, stackable = true,
+        desc = "말린 고기 몇 조각.\n먹으면 허기를 30 채운다.",
+    };
+    public static readonly ItemDef Torch = new ItemDef
+    {
+        id = "torch", name = "낡은 횃불", kind = ItemKind.Torch, stackable = true,
+        desc = "나뭇가지에 천을 감아 만든 불씨.\n들고 있으면 시야가 넓어진다. 타는 동안 내구도가 줄어들고, 다 타면 사라진다.",
+    };
+    public static readonly ItemDef Axe = new ItemDef
+    {
+        id = "axe", name = "낡은 도끼", kind = ItemKind.Equipment, slot = EquipSlot.Weapon, attackMin = 2, attackMax = 7,
+        desc = "입구에 놓여 있던 도끼.\n나무를 벨 수 있고, 무기로도 쓸 만하다.",
+    };
+    public static readonly ItemDef Pickaxe = new ItemDef
+    {
+        id = "pickaxe", name = "낡은 곡괭이", kind = ItemKind.Tool,
+        desc = "입구에 놓여 있던 곡괭이.\n광석을 캘 수 있다.",
+    };
+    public static readonly ItemDef Tunic = new ItemDef
+    {
+        id = "tunic", name = "누더기 튜닉", kind = ItemKind.Equipment, slot = EquipSlot.Top,
+        desc = "해지고 기운 천 튜닉에 밧줄 허리띠.\n눈을 떴을 때 입고 있던 유일한 옷.",
+    };
+}
+
+// 가방(칸 수 제한) + 장착 중인 장비
+public class Inventory
+{
+    public class Stack
+    {
+        public ItemDef def;
+        public int count;
+    }
+
+    public const int Capacity = 20;
+    public readonly List<Stack> bag = new List<Stack>();
+    readonly Dictionary<EquipSlot, ItemDef> equipped = new Dictionary<EquipSlot, ItemDef>();
+
+    public event Action OnChanged;
+
+    public ItemDef Equipped(EquipSlot slot)
+    {
+        equipped.TryGetValue(slot, out var def);
+        return def;
+    }
+
+    public int Count(ItemDef def)
+    {
+        int n = 0;
+        foreach (var s in bag) if (s.def == def) n += s.count;
+        foreach (var kv in equipped) if (kv.Value == def) n++;
+        return n;
+    }
+
+    public bool Add(ItemDef def, int count = 1)
+    {
+        for (int i = 0; i < count; i++)
+        {
+            var stack = def.stackable ? bag.Find(s => s.def == def) : null;
+            if (stack != null) stack.count++;
+            else if (bag.Count < Capacity) bag.Add(new Stack { def = def, count = 1 });
+            else { OnChanged?.Invoke(); return false; }   // 가방이 꽉 참
+        }
+        OnChanged?.Invoke();
+        return true;
+    }
+
+    public bool Remove(ItemDef def, int count = 1)
+    {
+        if (Count(def) < count) return false;
+        for (int i = 0; i < count; i++)
+        {
+            var stack = bag.Find(s => s.def == def);
+            if (stack != null)
+            {
+                if (--stack.count <= 0) bag.Remove(stack);
+                continue;
+            }
+            // 가방에 없으면 장착 중인 것을 뺀다
+            foreach (var kv in equipped)
+                if (kv.Value == def) { equipped.Remove(kv.Key); break; }
+        }
+        OnChanged?.Invoke();
+        return true;
+    }
+
+    // 가방의 장비를 장착한다. 그 칸에 있던 장비는 가방으로 돌아간다.
+    public bool Equip(ItemDef def)
+    {
+        if (def.slot == EquipSlot.None || !bag.Exists(s => s.def == def)) return false;
+        var freed = new List<EquipSlot> { def.slot };
+        if (def.slot == EquipSlot.TopBottom) { freed.Add(EquipSlot.Top); freed.Add(EquipSlot.Bottom); }
+        if (def.slot == EquipSlot.Top || def.slot == EquipSlot.Bottom) freed.Add(EquipSlot.TopBottom);
+
+        var back = new List<ItemDef>();
+        foreach (var s in freed)
+            if (equipped.TryGetValue(s, out var old)) { back.Add(old); equipped.Remove(s); }
+        if (bag.Count - 1 + back.Count > Capacity) { foreach (var o in back) equipped[o.slot] = o; return false; }
+
+        var stack = bag.Find(s => s.def == def);
+        if (--stack.count <= 0) bag.Remove(stack);
+        equipped[def.slot] = def;
+        foreach (var o in back) bag.Add(new Stack { def = o, count = 1 });
+        OnChanged?.Invoke();
+        return true;
+    }
+
+    public bool Unequip(EquipSlot slot)
+    {
+        if (!equipped.TryGetValue(slot, out var def) || bag.Count >= Capacity) return false;
+        equipped.Remove(slot);
+        bag.Add(new Stack { def = def, count = 1 });
+        OnChanged?.Invoke();
+        return true;
+    }
+
+    // 처음부터 장착한 채로 시작 (가방을 거치지 않음)
+    public void EquipDirect(ItemDef def) => equipped[def.slot] = def;
+}

@@ -16865,6 +16865,7 @@ GameObject:
   - component: {fileID: 2000106795}
   - component: {fileID: 2000106794}
   - component: {fileID: 2000106796}
+  - component: {fileID: 2000106797}
   m_Layer: 0
   m_Name: HUD
   m_TagString: Untagged
@@ -16941,6 +16942,19 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 840a9748f9f0cb048a0398c3cff75ff4, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::DeathScreen
+  player: {fileID: 1538796694}
+--- !u!114 &2000106797
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2000106791}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: bf49f87c7d4898844a105dbca0c8b480, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::InventoryUI
   player: {fileID: 1538796694}
 --- !u!1001 &2007529880
 PrefabInstance:

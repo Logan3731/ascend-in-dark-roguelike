@@ -120,7 +120,7 @@ public class HUD : MonoBehaviour
         ir.sizeDelta = new Vector2(600, 28);
 
         var keys = MakeText(root, "Keys", 18, TextAnchor.MiddleLeft);
-        keys.text = "[F] 횃불 들기/내리기    [E] 식량 먹기";
+        keys.text = "[I] 소지품    [F] 횃불 들기/내리기    [E] 식량 먹기";
         keys.color = new Color(1, 1, 1, 0.5f);
         var kr = keys.rectTransform;
         kr.anchorMin = kr.anchorMax = kr.pivot = new Vector2(0, 1);
