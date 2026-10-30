@@ -127,12 +127,14 @@ public class PlayerStats : MonoBehaviour
         if (Hunger == 0)
         {
             if (before > 0) GameLog.Add("굶주림에 몸이 버티지 못한다.", GameLog.Bad);
+            DamagePopup.Spawn(DamagePopup.Above(this), $"-{starveDamage}", DamagePopup.Big, 0.95f);
             Damage(starveDamage);
         }
 
         if (PoisonTurns > 0)
         {
             PoisonTurns--;
+            DamagePopup.Spawn(DamagePopup.Above(this), "-1", DamagePopup.Poison, 0.9f);
             Damage(1);
             if (PoisonTurns == 0 && !Dead) GameLog.Add("독이 빠졌다.", GameLog.Good);
         }
@@ -171,8 +173,10 @@ public class PlayerStats : MonoBehaviour
     {
         if (Dead) return;
         if (!Bag.Remove(Items.Food)) { GameLog.Add("먹을 것이 없다.", GameLog.Info); return; }
+        int before = Hunger;
         Hunger = Mathf.Min(maxHunger, Hunger + foodRestore);
         GameLog.Add("배를 채웠다.", GameLog.Good);
+        DamagePopup.Spawn(DamagePopup.Above(this), $"허기 +{Hunger - before}", DamagePopup.Heal, 0.9f);
         OnChanged?.Invoke();
     }
 

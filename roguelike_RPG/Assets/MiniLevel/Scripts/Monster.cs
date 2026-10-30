@@ -46,6 +46,7 @@ public class Monster : Interactable
     Transform Visual => transform.childCount > 0 ? transform.GetChild(0) : null;
     Vector3 visualHome;
 
+    const float LungeImpact = 0.12f;   // 공격 연출(0.25초)에서 몸이 가장 앞으로 나간 순간
     static readonly Vector2Int[] Dirs = { Vector2Int.up, Vector2Int.down, Vector2Int.left, Vector2Int.right };
 
     protected override void Awake()
@@ -104,22 +105,31 @@ public class Monster : Interactable
         var mover = player.GetComponent<GridClickMover>();
         if (mover != null) mover.PlayLunge(transform.position, delay);
 
+        float impact = delay + LungeImpact;   // 내지른 공격이 닿는 순간
         if (Random.value < evasion)
+        {
             GameLog.Add($"{displayName}{Josa("이", "가")} 공격을 피했다.", GameLog.Info);
-        else
-            TakeDamage(player.RollAttack(), player, delay);
+            DamagePopup.Spawn(DamagePopup.Above(this), "빗나감", DamagePopup.Miss, 0.9f, impact);
+            return;
+        }
+        int dmg = player.RollAttack();
+        // 최대치로 때리면 더 크고 주황색으로
+        bool best = dmg >= player.AttackMax && player.AttackMax > player.AttackMin;
+        DamagePopup.Spawn(DamagePopup.Above(this), best ? $"{dmg}!" : dmg.ToString(), best ? DamagePopup.Big : DamagePopup.Hit, best ? 1.45f : 1.1f, impact);
+        StartCoroutine(FlashRed(impact));
+        TakeDamage(dmg, player, delay);
     }
 
     // 차례가 와서 플레이어를 공격한다. 연출에 쓴 시간(다음 공격까지 간격)을 돌려준다.
     public float AttackPlayer(PlayerStats player, float delay)
     {
         StartCoroutine(Lunge(player.transform.position, delay));
-        HitPlayer(player);
+        HitPlayer(player, delay);
         if (!player.Dead && Random.value < doubleAttackChance)
         {
             GameLog.Add($"{displayName}{Josa("이", "가")} 한 번 더 덤벼든다!", GameLog.Bad);
             StartCoroutine(Lunge(player.transform.position, delay + TurnResolver.AttackGap));
-            HitPlayer(player);
+            HitPlayer(player, delay + TurnResolver.AttackGap);
             return TurnResolver.AttackGap * 2f;
         }
         return TurnResolver.AttackGap;
@@ -187,12 +197,31 @@ public class Monster : Interactable
         if (next != null) StartCoroutine(MoveTo(next.Value, moveSeconds));
     }
 
-    void HitPlayer(PlayerStats player)
+    void HitPlayer(PlayerStats player, float delay)
     {
         int dmg = Random.Range(AtkMin, AtkMax + 1);
+        float impact = delay + LungeImpact;
         GameLog.Add($"{displayName}의 공격! {dmg}의 피해.", GameLog.Bad);
+        DamagePopup.Spawn(DamagePopup.Above(player), $"-{dmg}", DamagePopup.Hurt, dmg >= AtkMax && AtkMax > AtkMin ? 1.4f : 1.15f, impact);
+        ScreenEffects.PlayerHit((float)dmg / player.maxHp, impact);
         player.Damage(dmg);
-        if (!player.Dead && poisonChance > 0f && Random.value < poisonChance) player.Poison(poisonTurns);
+        if (!player.Dead && poisonChance > 0f && Random.value < poisonChance)
+        {
+            player.Poison(poisonTurns);
+            DamagePopup.Spawn(DamagePopup.Above(player, 1.3f), "중독!", DamagePopup.Poison, 0.9f, impact + 0.15f);
+        }
+    }
+
+    // 맞은 순간 몸이 잠깐 붉게 번쩍인다
+    IEnumerator FlashRed(float delay)
+    {
+        if (delay > 0f) yield return new WaitForSeconds(delay);
+        var renderers = GetComponentsInChildren<Renderer>();
+        var block = new MaterialPropertyBlock();
+        block.SetColor("_BaseColor", new Color(1f, 0.3f, 0.25f));
+        foreach (var r in renderers) r.SetPropertyBlock(block);
+        yield return new WaitForSeconds(0.12f);
+        foreach (var r in renderers) if (r != null) r.SetPropertyBlock(null);
     }
 
     // 이름 끝 글자의 받침에 맞는 조사 (쥐가 / 늑대를 / 슬라임이)
