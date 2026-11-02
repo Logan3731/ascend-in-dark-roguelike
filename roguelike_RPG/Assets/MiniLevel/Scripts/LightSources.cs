@@ -17,6 +17,18 @@ public static class LightSources
     public static void Register(ISource s) { if (!sources.Contains(s)) sources.Add(s); }
     public static void Unregister(ISource s) => sources.Remove(s);
 
+    // 플레이어가 든 횃불을 뺀 빛(벽 횃불·던진 횃불)만 — 박쥐는 이 빛 안으로 들어오지 않는다
+    public static bool IsLitByFixed(Vector2Int cell)
+    {
+        foreach (var s in sources)
+        {
+            if (s == null || !s.IsOn || s is PlayerStats) continue;
+            var d = cell - s.Cell;
+            if (d.x * d.x + d.y * d.y <= s.RadiusCells * s.RadiusCells) return true;
+        }
+        return false;
+    }
+
     public static bool IsLit(Vector2Int cell)
     {
         foreach (var s in sources)

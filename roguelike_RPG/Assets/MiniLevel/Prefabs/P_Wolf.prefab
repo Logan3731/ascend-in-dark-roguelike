@@ -69,10 +69,12 @@ MonoBehaviour:
   evasion: 0.15
   sight: 3
   moveEvery: 1
-  doubleAttackChance: 0.2
+  doubleAttackChance: 0.1
   poisonChance: 0
   poisonTurns: 4
   splitOnDeath: 0
+  behavior: 1
+  fireWeak: 0
   goldMin: 1
   goldMax: 4
   expReward: 4

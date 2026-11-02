@@ -25,6 +25,18 @@ public class Monster : Interactable
     public int poisonTurns = 4;
     public bool splitOnDeath;                              // 슬라임: 죽으면 절반 능력치 둘로 분열 (한 번만)
 
+    // 종족마다 다르게 움직인다 — 상대에 따라 대응을 바꾸게
+    public enum Behavior
+    {
+        Chaser,     // 그냥 쫓아온다 (슬라임)
+        Charger,    // 일직선 2~3칸이면 몸을 낮춰 예고 → 다음 턴 돌진. 비키면 헐떡이며 한 턴 무방비 (늑대)
+        Skittish,   // 벽 횃불·던진 횃불의 빛엔 들어오지 않는다. 치고 빠진다 (박쥐)
+        Coward,     // 다치면 달아난다(느리게). 깨어나면 근처 동료를 부른다 (쥐)
+    }
+    [Header("행동")]
+    public Behavior behavior = Behavior.Chaser;
+    public bool fireWeak;                                  // 슬라임: 던진 횃불에 두 배 피해
+
     [Header("처치 보상")]
     public int goldMin = 0, goldMax = 3;
     public int expReward = 2;                              // 쓰러뜨리면 쌓이는 전투 경험 (죽으면 경험의 정수)
@@ -41,10 +53,21 @@ public class Monster : Interactable
     // 빛 안이면 약해지고(이름 흰색) 어둠 속이면 사나워진다(이름 빨간색)
     public bool InLight => LightSources.IsLit(Cell);
     const float LitDamage = 0.75f, DarkDamage = 1.3f;
-    float Evasion => InLight ? evasion * 0.5f : Mathf.Min(0.9f, evasion + 0.1f);
+    float Evasion => stunned > 0 ? 0f : InLight ? evasion * 0.5f : Mathf.Min(0.9f, evasion + 0.1f);
+
+    // 행동 상태
+    int stunned;               // 남은 무방비 턴 (헐떡임)
+    bool charging;             // 돌진 예고 중
+    Vector2Int chargeDir;
+    int chargeCooldown;
+    bool retreat;              // 박쥐: 방금 쳤으니 이번 턴엔 물러난다
+    bool fleeing;              // 쥐: 겁먹고 달아나는 중
+    float nextHitMult = 1f;    // 돌진으로 덮친 공격은 두 배
+    readonly List<GameObject> warnTiles = new List<GameObject>();
     static bool darkHintShown;
+    static readonly HashSet<Behavior> hinted = new HashSet<Behavior>();
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-    static void ResetHint() => darkHintShown = false;
+    static void ResetHint() { darkHintShown = false; hinted.Clear(); }
 
     bool awake;
     bool isSplitChild;
@@ -66,7 +89,7 @@ public class Monster : Interactable
 
     void Start() { bar = MonsterHealthBar.Create(this); }
 
-    void OnDestroy() { if (bar != null) Destroy(bar.gameObject); }
+    void OnDestroy() { if (bar != null) Destroy(bar.gameObject); ClearWarning(); }
 
     // 레벨에 따라 강해지고, 체력은 개체마다 조금씩 다르다
     void RollStats()
@@ -131,6 +154,11 @@ public class Monster : Interactable
     // 던진 돌·횃불에 맞는다 (피하지 못한다)
     public void HitByThrow(PlayerStats player, int dmg, string what, float delay)
     {
+        if (fireWeak && what == "횃불")
+        {
+            dmg *= 2;
+            GameLog.Add($"{displayName}{Josa("은", "는")} 불에 약하다!", GameLog.Good);
+        }
         DamagePopup.Spawn(DamagePopup.Above(this), dmg.ToString(), DamagePopup.Hit, 1.1f, delay);
         StartCoroutine(FlashRed(delay));
         GameLog.Add($"던진 {what}{Korean.Josa(what, "이", "가")} {displayName}에게 맞았다.", GameLog.Info);
@@ -172,6 +200,7 @@ public class Monster : Interactable
         GameLog.Add(gold > 0 ? $"경험 +{exp}   골드 +{gold}" : $"경험 +{exp}", GameLog.Good);
         if (splitOnDeath && !isSplitChild) Split();
         enabled = false;
+        ClearWarning();
         if (bar != null) Destroy(bar.gameObject);
         FadeOut.Run(this, 0.8f, delay + 0.2f);
     }
@@ -203,26 +232,281 @@ public class Monster : Interactable
         int dist = GridNav.Distance(me, playerCell);
         if (!awake && dist <= sight)
         {
-            awake = true;
-            GameLog.Add($"{displayName}{Josa("이", "가")} 이쪽을 노려본다!", GameLog.Warn);
-            GridClickMover.StopWalking();   // 멀리 걸어가던 중이면 멈춰서 상황을 보게
-            if (!InLight && !darkHintShown)
-            {
-                darkHintShown = true;
-                GameLog.Add("어둠 속의 적은 더 사납다. 빛 안에서 싸워야 한다…", GameLog.Info);
-            }
+            WakeUp();
+            if (behavior == Behavior.Coward) CallPack();
         }
         if (!awake) return;
 
+        if (stunned > 0)
+        {
+            if (--stunned == 0) GameLog.Add($"{displayName}{Josa("이", "가")} 숨을 고른다.", GameLog.Info);
+            return;
+        }
+        if (chargeCooldown > 0) chargeCooldown--;
+
+        switch (behavior)
+        {
+            case Behavior.Charger: PlanCharger(me, playerCell, turn, moveSeconds); break;
+            case Behavior.Skittish: PlanSkittish(me, playerCell, moveSeconds); break;
+            case Behavior.Coward: PlanCoward(me, playerCell, turn, moveSeconds); break;
+            default: Chase(me, playerCell, turn, moveSeconds, null); break;
+        }
+    }
+
+    void WakeUp()
+    {
+        awake = true;
+        GameLog.Add($"{displayName}{Josa("이", "가")} 이쪽을 노려본다!", GameLog.Warn);
+        if (hinted.Add(behavior))   // 종족마다 처음 한 번, 대처법 힌트
+        {
+            string hint = behavior switch
+            {
+                Behavior.Charger => "늑대는 곧은 길에서 돌진해 온다. 예고가 보이면 옆으로 비켜서라.",
+                Behavior.Skittish => "박쥐는 횃불 빛을 싫어한다. 벽 횃불이나 던진 횃불 곁이라면 다가오지 못한다.",
+                Behavior.Coward => "쥐는 무리를 짓는다. 다치면 달아나지만 느리다.",
+                _ => fireWeak ? "슬라임은 불에 약해 보인다. 횃불을 던져 볼까?" : null,
+            };
+            if (hint != null) GameLog.Add(hint, GameLog.Info);
+        }
+        GridClickMover.StopWalking();   // 멀리 걸어가던 중이면 멈춰서 상황을 보게
+        if (!InLight && !darkHintShown)
+        {
+            darkHintShown = true;
+            GameLog.Add("어둠 속의 적은 더 사납다. 빛 안에서 싸워야 한다…", GameLog.Info);
+        }
+    }
+
+    // 기본: 붙어 있으면 공격, 아니면 한 칸 다가간다 (avoid: 들어가지 않을 칸)
+    void Chase(Vector2Int me, Vector2Int playerCell, int turn, float moveSeconds, System.Func<Vector2Int, bool> avoid)
+    {
         if (GridNav.Adjacent(me, playerCell)) { WillAttack = true; return; }
         if (moveEvery > 1 && turn % moveEvery != 0) return;
-        var next = StepToward(me, playerCell);
+        var next = StepToward(me, playerCell, avoid);
         if (next != null) StartCoroutine(MoveTo(next.Value, moveSeconds));
+    }
+
+    // ---- 늑대: 돌진 ----
+
+    void PlanCharger(Vector2Int me, Vector2Int playerCell, int turn, float moveSeconds)
+    {
+        if (charging) { Charge(me, playerCell, moveSeconds); return; }
+        if (!GridNav.Adjacent(me, playerCell) && chargeCooldown == 0 && CanCharge(me, playerCell, out var dir))
+        {
+            charging = true;
+            chargeDir = dir;
+            ShowChargeWarning(me);
+            GameLog.Add($"{displayName}{Josa("이", "가")} 몸을 낮춘다… 곧 덮쳐 온다! (빨간 길에서 비켜서라)", GameLog.Bad);
+            DamagePopup.Spawn(DamagePopup.Above(this), "!", DamagePopup.Big, 1.8f);
+            GridClickMover.StopWalking();
+            Face(GridTile.CellToWorld(me + dir));
+            return;
+        }
+        Chase(me, playerCell, turn, moveSeconds, null);
+    }
+
+    // 플레이어가 곧은 줄(가로·세로·대각) 2~3칸 앞에 있고 그 사이가 비어 있으면 돌진할 수 있다
+    bool CanCharge(Vector2Int me, Vector2Int target, out Vector2Int dir)
+    {
+        var d = target - me;
+        dir = new Vector2Int(System.Math.Sign(d.x), System.Math.Sign(d.y));
+        int n = GridNav.Distance(me, target);
+        if (n < 2 || n > 3) return false;
+        if (!(d.x == 0 || d.y == 0 || Mathf.Abs(d.x) == Mathf.Abs(d.y))) return false;
+        var floors = GridNav.Floors();
+        var free = FreeCells(target);
+        var c = me;
+        for (int k = 1; k < n; k++)
+        {
+            if (!GridNav.CornerFree(c, dir, floors)) return false;
+            c += dir;
+            if (!free.Contains(c)) return false;
+        }
+        return GridNav.CornerFree(c, dir, floors);
+    }
+
+    // 예고한 방향으로 최대 3칸 돌진. 그 길에 플레이어가 있으면 덮친다(두 배 피해), 없으면 헐떡이며 한 턴 무방비.
+    void Charge(Vector2Int me, Vector2Int playerCell, float moveSeconds)
+    {
+        charging = false;
+        chargeCooldown = 4;
+        ClearWarning();
+        var floors = GridNav.Floors();
+        var free = FreeCells(playerCell);
+        var pos = me;
+        bool hit = false;
+        for (int k = 0; k < 3; k++)
+        {
+            if (!GridNav.CornerFree(pos, chargeDir, floors)) break;
+            var n = pos + chargeDir;
+            if (n == playerCell) { hit = true; break; }
+            if (!free.Contains(n)) break;
+            pos = n;
+        }
+        if (pos != me) StartCoroutine(MoveTo(pos, moveSeconds * 0.6f));
+        if (hit)
+        {
+            WillAttack = true;
+            nextHitMult = 2f;
+            GameLog.Add($"{displayName}{Josa("이", "가")} 덮쳐 왔다!", GameLog.Bad);
+        }
+        else
+        {
+            stunned = 1;
+            GameLog.Add($"{displayName}{Josa("이", "가")} 허공을 가르고 헐떡인다. (한 턴 무방비 — 지금이 기회다)", GameLog.Good);
+            DamagePopup.Spawn(DamagePopup.Above(this), "헐떡임", DamagePopup.Miss, 0.9f, moveSeconds * 0.6f);
+        }
+    }
+
+    void ShowChargeWarning(Vector2Int me)
+    {
+        ClearWarning();
+        var floors = GridNav.Floors();
+        var c = me;
+        for (int k = 0; k < 3; k++)
+        {
+            c += chargeDir;
+            if (!floors.Contains(c)) break;
+            var q = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            Destroy(q.GetComponent<Collider>());
+            q.name = "ChargeWarning";
+            q.transform.position = GridTile.CellToWorld(c) + Vector3.up * 0.04f;
+            q.transform.rotation = Quaternion.Euler(90, 0, 0);
+            q.transform.localScale = Vector3.one * (GridTile.CellSize * 0.9f);
+            var m = new Material(Shader.Find("Sprites/Default")) { color = new Color(1f, 0.15f, 0.1f, 0.35f - k * 0.07f) };
+            q.GetComponent<Renderer>().material = m;
+            warnTiles.Add(q);
+        }
+    }
+
+    void ClearWarning()
+    {
+        foreach (var t in warnTiles) if (t != null) Destroy(t);
+        warnTiles.Clear();
+    }
+
+    // ---- 박쥐: 빛을 피하고 치고 빠진다 ----
+
+    void PlanSkittish(Vector2Int me, Vector2Int playerCell, float moveSeconds)
+    {
+        // 방금 쳤으면 이번 턴엔 물러난다
+        if (retreat)
+        {
+            retreat = false;
+            var away = StepAway(me, playerCell, true);
+            if (away != null) { StartCoroutine(MoveTo(away.Value, moveSeconds)); return; }
+        }
+        // 횃불 빛(벽 횃불·던진 횃불) 안에 있으면 어둠으로 달아난다
+        if (LightSources.IsLitByFixed(me))
+        {
+            var dark = StepAway(me, playerCell, true, true);
+            if (dark != null) { StartCoroutine(MoveTo(dark.Value, moveSeconds)); return; }
+        }
+        if (GridNav.Adjacent(me, playerCell)) { WillAttack = true; retreat = true; return; }
+        // 가끔은 갈팡질팡 날아다닌다
+        if (Random.value < 0.25f)
+        {
+            var free = FreeCells(playerCell);
+            var floors = GridNav.Floors();
+            var opts = new List<Vector2Int>();
+            foreach (var d in GridNav.Dirs8)
+                if (free.Contains(me + d) && GridNav.CornerFree(me, d, floors) && !LightSources.IsLitByFixed(me + d)) opts.Add(me + d);
+            if (opts.Count > 0) { StartCoroutine(MoveTo(opts[Random.Range(0, opts.Count)], moveSeconds)); return; }
+        }
+        Chase(me, playerCell, 1, moveSeconds, LightSources.IsLitByFixed);
+    }
+
+    // ---- 쥐: 다치면 달아나고, 동료를 부른다 ----
+
+    void PlanCoward(Vector2Int me, Vector2Int playerCell, int turn, float moveSeconds)
+    {
+        if (!fleeing && Hp <= MaxHp * 0.4f)
+        {
+            fleeing = true;
+            GameLog.Add($"{displayName}{Josa("이", "가")} 겁에 질려 달아난다!", GameLog.Info);
+            DamagePopup.Spawn(DamagePopup.Above(this), "겁먹음", DamagePopup.Miss, 0.9f);
+        }
+        if (fleeing)
+        {
+            if (turn % 2 == 0) return;   // 다쳐서 느리다 — 쫓아가면 잡을 수 있다
+            var away = FleeStep(me, playerCell);
+            if (away != null) { StartCoroutine(MoveTo(away.Value, moveSeconds)); return; }
+            // 몰리면 문다
+            if (GridNav.Adjacent(me, playerCell)) WillAttack = true;
+            return;
+        }
+        Chase(me, playerCell, turn, moveSeconds, null);
+    }
+
+    void CallPack()
+    {
+        int called = 0;
+        foreach (var m in FindObjectsByType<Monster>(FindObjectsSortMode.None))
+        {
+            if (m == this || m.awake || m.Dead || !m.enabled || m.behavior != Behavior.Coward) continue;
+            if (GridNav.Distance(m.Cell, Cell) > 6) continue;
+            m.awake = true;
+            called++;
+        }
+        if (called > 0) GameLog.Add($"찍찍— {displayName}{Josa("이", "가")} 동료를 불렀다! ({called}마리)", GameLog.Bad);
+    }
+
+    // 달아나기: 8걸음 안에 갈 수 있는 칸 중 플레이어에게서 가장 먼(어두운 곳 우선) 칸으로 가는 첫 걸음.
+    // 모퉁이에 막혀도 돌아서 빠져나간다. 지금보다 멀어질 곳이 없으면 null (몰렸다).
+    Vector2Int? FleeStep(Vector2Int me, Vector2Int playerCell)
+    {
+        var free = FreeCells(playerCell);
+        var floors = GridNav.Floors();
+        var first = new Dictionary<Vector2Int, Vector2Int>();
+        var depth = new Dictionary<Vector2Int, int> { [me] = 0 };
+        var q = new Queue<Vector2Int>();
+        q.Enqueue(me);
+        Vector2Int? best = null;
+        float bestScore = GridNav.Distance(me, playerCell) + 0.4f;
+        while (q.Count > 0)
+        {
+            var c = q.Dequeue();
+            if (depth[c] >= 8) continue;
+            foreach (var d in GridNav.Dirs8)
+            {
+                var n = c + d;
+                if (!free.Contains(n) || depth.ContainsKey(n) || !GridNav.CornerFree(c, d, floors)) continue;
+                if (GridNav.Adjacent(n, playerCell, floors)) continue;   // 플레이어 옆을 스쳐 가지는 않는다
+                depth[n] = depth[c] + 1;
+                first[n] = c == me ? n : first[c];
+                q.Enqueue(n);
+                float score = GridNav.Distance(n, playerCell) + (LightSources.IsLit(n) ? 0f : 0.5f) - depth[n] * 0.05f;
+                if (score > bestScore) { bestScore = score; best = first[n]; }
+            }
+        }
+        return best;
+    }
+
+    // 플레이어에게서 멀어지는 한 걸음 (어두운 칸 우선). mustBeDark면 횃불 빛이 없는 칸만.
+    Vector2Int? StepAway(Vector2Int me, Vector2Int playerCell, bool preferDark, bool mustBeDark = false)
+    {
+        var free = FreeCells(playerCell);
+        var floors = GridNav.Floors();
+        Vector2Int? best = null;
+        float bestScore = float.MinValue;
+        int now = GridNav.Distance(me, playerCell);
+        foreach (var d in GridNav.Dirs8)
+        {
+            var n = me + d;
+            if (!free.Contains(n) || !GridNav.CornerFree(me, d, floors)) continue;
+            bool lit = LightSources.IsLitByFixed(n);
+            if (mustBeDark && lit) continue;
+            int dist = GridNav.Distance(n, playerCell);
+            if (!mustBeDark && dist <= now) continue;
+            float score = dist + (preferDark && !lit ? 0.5f : 0f) + Random.value * 0.1f;
+            if (score > bestScore) { bestScore = score; best = n; }
+        }
+        return best;
     }
 
     void HitPlayer(PlayerStats player, float delay)
     {
-        int dmg = Mathf.Max(1, Mathf.RoundToInt(Random.Range(AtkMin, AtkMax + 1) * (InLight ? LitDamage : DarkDamage)));
+        int dmg = Mathf.Max(1, Mathf.RoundToInt(Random.Range(AtkMin, AtkMax + 1) * (InLight ? LitDamage : DarkDamage) * nextHitMult));
+        nextHitMult = 1f;
         float impact = delay + LungeImpact;
         GameLog.Add($"{displayName}의 공격! {dmg}의 피해.", GameLog.Bad);
         DamagePopup.Spawn(DamagePopup.Above(player), $"-{dmg}", DamagePopup.Hurt, dmg >= AtkMax && AtkMax > AtkMin ? 1.4f : 1.15f, impact);
@@ -260,10 +544,12 @@ public class Monster : Interactable
     }
 
     // 플레이어 옆 칸(대각선 포함)까지의 최단 경로에서 첫 걸음
-    static Vector2Int? StepToward(Vector2Int from, Vector2Int target)
+    static Vector2Int? StepToward(Vector2Int from, Vector2Int target, System.Func<Vector2Int, bool> avoid = null)
     {
         var floors = GridNav.Floors();
-        var route = GridNav.FindPath(from, c => GridNav.Adjacent(c, target, floors), FreeCells(target), floors, 400);
+        var free = FreeCells(target);
+        if (avoid != null) free.RemoveWhere(c => avoid(c));
+        var route = GridNav.FindPath(from, c => GridNav.Adjacent(c, target, floors), free, floors, 400);
         return route != null && route.Count > 0 ? route[0] : (Vector2Int?)null;
     }
 

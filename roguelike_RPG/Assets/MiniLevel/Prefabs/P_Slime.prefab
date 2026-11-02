@@ -73,6 +73,8 @@ MonoBehaviour:
   poisonChance: 0
   poisonTurns: 4
   splitOnDeath: 1
+  behavior: 0
+  fireWeak: 1
   goldMin: 0
   goldMax: 3
   expReward: 3
