@@ -105,3 +105,11 @@ Keep this image's background exactly as it is: the same soft isometric stone roo
 ```
 - 결과 URL(VARCO): `/api/objects/9f0d7ee51554e66c14907e832ed04915.png` (파일: `images/edit7.png`)
 - 결과 비교: 6회차의 부드러운 배경(문·곡괭이·도끼 위치 동일)은 유지되고, 캐릭터는 4회차의 얼굴·체형·갈색 누더기 튜닉으로 교체됨. 원본+레퍼런스 조합으로 '배경/캐릭터 따로 고르기'가 가능했다.
+
+## 지도 아이콘·제작 재료 (2026-11-02)
+- 지도 아이콘 9종: 화살표(흰색, 게임에서 나 = 노랑·적 = 빨강으로 물들임), 보물상자, 해골(시체), 올라가는 계단, 내려가는 계단, 벽 횃불(흰색, 불 붙으면 주황), 문(흰색, 나무/철 색으로 물들임), 잠긴 문, 모루
+  - 공통 프롬프트 꼬리: `32x32 pixel art upscaled, crisp hard pixel edges, bold simple silhouette readable at very small size, thin dark outline, centered, filling about 80% of the frame, flat solid pure magenta background (#FF00FF) everywhere around the icon, no shadow, no gradient, no border, no text.`
+  - 자홍 배경을 Unity에서 투명으로 지우고 128px로 줄여 `Resources/MapIcons/`에 넣음
+- 소지품 아이콘 4종(기존 아이콘과 같은 화풍): 나뭇가지, 돌멩이, 나무 몽둥이, 돌도끼 → `Resources/Icons/`
+- 3D: 모루(나무 그루터기 위), 나뭇가지 묶음, 돌멩이 — 이미지 → Generate3D → Blender로 FBX·텍스처 분리 → `Models/Anvil·Branch·Stone`, 프리팹 P_Anvil·P_Branch·P_Stone
+- 결과 모음: `images/floor1/06_VARCO_아이콘_모음.png`

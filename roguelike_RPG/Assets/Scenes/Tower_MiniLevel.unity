@@ -173,6 +173,12 @@ MonoBehaviour:
   width: 41
   height: 41
   maxRooms: 16
+  keepDeadEnds: 8
+  maxDeadEndLength: 7
+  extraDoorChance: 0.05
+  straightness: 0.4
+  lockedRooms: 3
+  ironDoorChance: 0.3
   seed: 0
   floorPrefab: {fileID: 1444709380592222624, guid: d6713063dc4f57d44922988eadc7acef, type: 3}
   wallPrefab: {fileID: 8590372288420444779, guid: 602692b43a09eca4da2bc0c6422e5f97, type: 3}
@@ -184,6 +190,12 @@ MonoBehaviour:
   bat: {fileID: 7390313743405297564, guid: d30c37e1fd7281c42a4ee4f1402eea7b, type: 3}
   slime: {fileID: 6920131895989103886, guid: 792bc2e671162d444b5a53317767572a, type: 3}
   wolf: {fileID: 1704615779319240360, guid: 6e75d43ce3cf49e47a9b24f9d26e62c0, type: 3}
+  anvilPrefab: {fileID: 7448252826696894095, guid: ac7ff8fe69cba2c419f68866a38534ac, type: 3}
+  branchPrefab: {fileID: 397479955229502043, guid: 8709bce99f0ac3642b2867c54b6e1ad3, type: 3}
+  stonePrefab: {fileID: 2875777180985103628, guid: 7f05c16c9f6155c40a1d9ddb7f16824f, type: 3}
+  wallTorches: 12
+  branches: 14
+  stones: 10
   player: {fileID: 1538796691}
   giantDoor: {fileID: 1785813250}
   tools: {fileID: 1811694408}
@@ -578,6 +590,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::StairsEvent
   triggerOnEnter: 0
+  down: 0
 --- !u!1 &1507068853
 GameObject:
   m_ObjectHideFlags: 0

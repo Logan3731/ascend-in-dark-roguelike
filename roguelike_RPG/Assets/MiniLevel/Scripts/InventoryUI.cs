@@ -85,7 +85,7 @@ public class InventoryUI : MonoBehaviour
             if (held != null && returning == null) heldIcon.rectTransform.anchoredPosition = mouse;
             if (tooltip.gameObject.activeSelf) PlaceNearMouse(tooltip, mouse);
         }
-        else if ((kb.iKey.wasPressedThisFrame || kb.tabKey.wasPressedThisFrame) && !DialogUI.IsOpen && !PauseMenu.IsOpen && !TitleScreen.IsOpen && !Minimap.FullOpen && !player.Dead) Open();
+        else if ((kb.iKey.wasPressedThisFrame || kb.tabKey.wasPressedThisFrame) && !DialogUI.IsOpen && !PauseMenu.IsOpen && !TitleScreen.IsOpen && !Minimap.FullOpen && !CraftUI.IsOpen && !player.Dead) Open();
     }
 
     public void Open()
@@ -150,6 +150,7 @@ public class InventoryUI : MonoBehaviour
 
         string kind = def.kind == ItemKind.Food || def.kind == ItemKind.Torch ? $"소모품 · {player.Bag.Count(def)}개"
             : def.slot != EquipSlot.None ? $"장비 · {SlotName(def.slot)} 칸"
+            : def.kind == ItemKind.Material ? $"재료 · {player.Bag.Count(def)}개"
             : "도구";
         var s = $"<size=24><color=#dcb86b>{def.name}</color></size>\n<color=#9e9480>{kind}</color>\n\n{def.desc}";
         if (def.attackMin > 0) s += $"\n\n<color=#dcb86b>공격 +{def.attackMin}~{def.attackMax}</color>";
@@ -158,6 +159,7 @@ public class InventoryUI : MonoBehaviour
         string hint = equipped ? "클릭하거나 끌어서 가방에 넣으면 벗는다"
             : def.kind == ItemKind.Food || def.kind == ItemKind.Torch ? "클릭: 사용"
             : def.slot != EquipSlot.None ? "클릭하거나 끌어서 장비 칸에 넣는다"
+            : def.kind == ItemKind.Material ? "시작한 방의 모루에서 쓸 수 있다"
             : "아직 쓸 곳이 없다";
         s += $"\n\n<color=#9ed0ff>{hint}</color>";
 

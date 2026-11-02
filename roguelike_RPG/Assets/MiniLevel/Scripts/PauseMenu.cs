@@ -32,7 +32,7 @@ public class PauseMenu : MonoBehaviour
             else Close();
             return;
         }
-        if (TitleScreen.IsOpen || DialogUI.IsOpen || InventoryUI.IsOpen || InventoryUI.EscFrame == Time.frameCount || Minimap.FullOpen || Minimap.EscFrame == Time.frameCount) return;
+        if (TitleScreen.IsOpen || DialogUI.IsOpen || InventoryUI.IsOpen || InventoryUI.EscFrame == Time.frameCount || Minimap.FullOpen || Minimap.EscFrame == Time.frameCount || CraftUI.IsOpen || CraftUI.EscFrame == Time.frameCount) return;
         if (player != null && player.Dead) return;
         Open();
     }

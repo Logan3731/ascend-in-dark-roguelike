@@ -34,7 +34,7 @@ public class GridClickMover : MonoBehaviour
     // 이동·공격·연출이 다 끝나야 다음 행동을 받는다
     bool Busy => stepping || Time.time < TurnResolver.BusyUntil;
     bool HasGoal => goalCell != null || goalTarget != null;
-    static bool Blocked => DialogUI.IsOpen || InventoryUI.IsOpen || PauseMenu.IsOpen || TitleScreen.IsOpen || Minimap.FullOpen;
+    static bool Blocked => DialogUI.IsOpen || InventoryUI.IsOpen || PauseMenu.IsOpen || TitleScreen.IsOpen || Minimap.FullOpen || CraftUI.IsOpen;
 
     static GridClickMover instance;
     void Awake() => instance = this;
@@ -102,7 +102,30 @@ public class GridClickMover : MonoBehaviour
 
         // 벽 콜라이더에 막히지 않도록 바닥 높이의 평면과 교차한 지점으로 칸을 정한다.
         var ground = new Plane(Vector3.up, Vector3.zero);
-        if (ground.Raycast(ray, out float enter)) SetDestination(GridTile.WorldToCell(ray.GetPoint(enter)));
+        if (!ground.Raycast(ray, out float enter)) return;
+        var cell = GridTile.WorldToCell(ray.GetPoint(enter));
+        // 그 칸에 막는 사물(상자·고블린·몬스터·닫힌 문)이 있으면 그 옆까지 가서 상호작용한다
+        var thing = InteractableAt(cell);
+        if (thing != null && thing.GetComponent<GridBlocker>() is GridBlocker b && b.enabled)
+        {
+            goalCell = null;
+            goalTarget = thing;
+            ShowMarker(cell);
+            return;
+        }
+        SetDestination(cell);   // 밟을 수 있는 칸의 사물(뼈·벽 횃불·계단 등)은 도착하면 상호작용
+    }
+
+    // 그 칸에 있는 상호작용 대상 (밟으면 저절로 발동하는 것·열린 문은 빼고)
+    static Interactable InteractableAt(Vector2Int cell)
+    {
+        foreach (var it in FindObjectsByType<Interactable>(FindObjectsSortMode.None))
+        {
+            if (it.triggerOnEnter || !it.isActiveAndEnabled || it.Cell != cell) continue;
+            if (it is Door d && d.IsOpen) continue;
+            return it;
+        }
+        return null;
     }
 
     // 누르고 있으면 커서를 따라 계속 걷는다 (목표 칸만 계속 바꿔 준다)
@@ -277,7 +300,13 @@ public class GridClickMover : MonoBehaviour
         if (IsFinalStep(cell) || !HasGoal)
         {
             if (animator != null) animator.SetBool(MovingParam, false);
-            if (goalCell != null && GridTile.WorldToCell(transform.position) == goalCell) ClearGoal();
+            if (goalCell != null && GridTile.WorldToCell(transform.position) == goalCell)
+            {
+                ClearGoal();
+                // 목표 칸에 도착: 그 칸에 있는 것(뼈·벽 횃불·계단·도구)과 바로 상호작용 (클릭하지 않아도)
+                var thing = InteractableAt(cell);
+                if (thing != null && !(thing is Monster) && !(thing is Door)) thing.Interact(stats);
+            }
         }
         stepping = false;
         // 다음 칸으로 바로 이어 걷는다 (한 프레임 멈칫하지 않게)

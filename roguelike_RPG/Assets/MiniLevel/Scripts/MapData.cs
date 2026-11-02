@@ -41,6 +41,16 @@ public class MapData
     public bool IsExplored(Vector2Int c) => Contains(c) && explored[c.x - bounds.xMin, c.y - bounds.yMin];
     public bool IsVisited(Vector2Int c) => Contains(c) && visited[c.x - bounds.xMin, c.y - bounds.yMin];
 
+    // 바닥 칸 중 본 적 있는 칸의 비율 (0~100)
+    public float ExploredPercent()
+    {
+        int total = 0, seen = 0;
+        for (int x = 0; x < bounds.width; x++)
+            for (int y = 0; y < bounds.height; y++)
+                if (terrain[x, y] == Terrain.Floor) { total++; if (explored[x, y]) seen++; }
+        return total > 0 ? 100f * seen / total : 0f;
+    }
+
     // 중심 칸에서 반경(정사각형) 안의 칸을 밝힌다. 반경 1 = 3×3, 반경 2 = 5×5
     public void Reveal(Vector2Int center, int radius)
     {

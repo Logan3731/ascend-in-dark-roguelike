@@ -32,6 +32,11 @@ public class FloorGenerator : MonoBehaviour
     public GameObject wallTorchPrefab;
     public GameObject chestSmall, chestBig, chestElite;
     public GameObject rat, bat, slime, wolf;
+    public GameObject anvilPrefab, branchPrefab, stonePrefab;
+
+    [Header("배치 수")]
+    public int wallTorches = 12;
+    public int branches = 14, stones = 10;
 
     [Header("씬에 있는 것 (위치만 옮긴다)")]
     public Transform player;
@@ -406,8 +411,8 @@ public class FloorGenerator : MonoBehaviour
         // 굶주린 고블린: 중간쯤 되는 방
         Put(goblin, FreeCellIn(midRoom.rect, true), RandomYaw());
 
-        // 벽 횃불 (꺼진 채로)
-        foreach (var r in rooms) if (R01() < 0.6f) PlaceWallTorch(r.rect);
+        // 벽 횃불 (꺼진 채로): 가장 많은 바닥을 밝힐 수 있는 자리에
+        PlaceWallTorches(wallTorches);
 
         // 몬스터: 상자가 있는 방은 지키는 녀석이 있을 확률이 높다. 깊이에 따라 종류·레벨이 달라진다
         foreach (var r in rooms)
@@ -429,6 +434,10 @@ public class FloorGenerator : MonoBehaviour
             corridorCells.Remove(c);
             SpawnMonster(c);
         }
+
+        // 재료: 미로 곳곳에 나뭇가지·돌멩이 (밟으면 줍는다)
+        ScatterPickups("branch", branchPrefab, branches + R(-2, 3));
+        ScatterPickups("stone", stonePrefab, stones + R(-2, 3));
 
         root.gameObject.SetActive(true);
     }
@@ -474,6 +483,21 @@ public class FloorGenerator : MonoBehaviour
 
         // 문을 나서자마자 "너무 어둡다"
         Put(darkTrigger, outsideDoor, Quaternion.identity);
+
+        // 모루(대장간): 카메라 반대쪽(+x+z) 벽가 칸 중 비어 있고 문 앞이 아닌 곳 — 앞쪽 벽에 가려지지 않게
+        Vector2Int? anvilCell = null;
+        for (int x = start.rect.xMin; x < start.rect.xMax; x++)
+            for (int y = start.rect.yMin; y < start.rect.yMax; y++)
+            {
+                var c = new Vector2Int(x, y);
+                bool edge = x == start.rect.xMax - 1 || y == start.rect.yMax - 1;
+                if (!edge || occupied.Contains(c) || GridNav.Distance(c, doorCell) <= 1 || GridNav.Distance(c, Center(start.rect) - outDir) <= 1) continue;
+                if (anvilCell == null || c.x + c.y > anvilCell.Value.x + anvilCell.Value.y) anvilCell = c;
+            }
+        if (anvilCell == null) return;
+        occupied.Add(anvilCell.Value);
+        var toCenter = (Vector2)(Center(start.rect) - anvilCell.Value);
+        SpawnAnvil(anvilCell.Value, Quaternion.LookRotation(new Vector3(toCenter.x, 0, toCenter.y)));
     }
 
     void BuildDoors()
@@ -556,21 +580,119 @@ public class FloorGenerator : MonoBehaviour
         return go;
     }
 
-    void PlaceWallTorch(RectInt r)
+    // 벽 횃불: 아직 안 밝힌 바닥을 가장 많이 비추는 자리부터 (상위 몇 곳 중 무작위라 매번 조금씩 다르다)
+    void PlaceWallTorches(int count)
     {
         if (wallTorchPrefab == null) return;
-        var options = new List<(Vector2Int cell, Vector2Int wall)>();
-        for (int x = r.xMin; x < r.xMax; x++)
-            for (int y = r.yMin; y < r.yMax; y++)
+        const float Radius = 2.5f;   // WallTorch.radiusCells 와 같게
+        var lit = new HashSet<Vector2Int>();
+        var cands = new List<(Vector2Int cell, Vector2Int wall)>();
+        foreach (var kv in dist)
+        {
+            var c = kv.Key;
+            if (At(c) == C.Door || occupied.Contains(c) || NextToDoor(c)) continue;
+            foreach (var d in Dirs4) if (!IsFloor(c + d)) cands.Add((c, d));
+        }
+        int NewlyLit(Vector2Int c)
+        {
+            int n = 0;
+            for (int dx = -2; dx <= 2; dx++)
+                for (int dy = -2; dy <= 2; dy++)
+                {
+                    var o = c + new Vector2Int(dx, dy);
+                    if (dx * dx + dy * dy <= Radius * Radius && IsFloor(o) && !lit.Contains(o)) n++;
+                }
+            return n;
+        }
+        for (int n = 0; n < count && cands.Count > 0; n++)
+        {
+            var scored = new List<(int score, int index)>();
+            for (int i = 0; i < cands.Count; i++) scored.Add((NewlyLit(cands[i].cell), i));
+            scored.Sort((a, b) => b.score.CompareTo(a.score));
+            if (scored[0].score < 6) break;   // 더 놓아도 밝힐 곳이 별로 없다
+            var pick = cands[scored[R(0, Mathf.Min(4, scored.Count))].index];
+            Spawn(wallTorchPrefab, pick.cell, Quaternion.LookRotation(new Vector3(pick.wall.x, 0, pick.wall.y)));
+            for (int dx = -2; dx <= 2; dx++)
+                for (int dy = -2; dy <= 2; dy++)
+                    if (dx * dx + dy * dy <= Radius * Radius) lit.Add(pick.cell + new Vector2Int(dx, dy));
+            cands.RemoveAll(c => c.cell == pick.cell);
+        }
+    }
+
+    bool NextToDoor(Vector2Int c)
+    {
+        foreach (var d in GridNav.Dirs8) if (At(c + d) == C.Door) return true;
+        return false;
+    }
+
+    // 나뭇가지·돌멩이를 미로 곳곳(시작 방 밖)의 빈 칸에 흩어 놓는다
+    void ScatterPickups(string id, GameObject prefab, int count)
+    {
+        var cells = new List<Vector2Int>();
+        foreach (var kv in dist)
+            if (At(kv.Key) != C.Door && !occupied.Contains(kv.Key) && kv.Value > 2) cells.Add(kv.Key);
+        for (int i = 0; i < count && cells.Count > 0; i++)
+        {
+            var c = Pick(cells);
+            cells.Remove(c);
+            occupied.Add(c);
+            GameObject go;
+            if (prefab != null) go = Instantiate(prefab, GridTile.CellToWorld(c), Quaternion.Euler(0, R(0, 360), 0), root);
+            else go = FallbackPickup(id, c);
+            var p = go.GetComponent<Pickup>() ?? go.AddComponent<Pickup>();
+            p.itemId = id;
+            p.triggerOnEnter = true;
+        }
+    }
+
+    // 3D 모델이 없을 때 쓰는 간단한 모양
+    GameObject FallbackPickup(string id, Vector2Int c)
+    {
+        var go = new GameObject(id == "stone" ? "Stone" : "Branch");
+        go.transform.SetParent(root, false);
+        go.transform.SetPositionAndRotation(GridTile.CellToWorld(c), Quaternion.Euler(0, R(0, 360), 0));
+        for (int i = 0; i < 3; i++)
+        {
+            var part = GameObject.CreatePrimitive(id == "stone" ? PrimitiveType.Sphere : PrimitiveType.Cylinder);
+            Destroy(part.GetComponent<Collider>());
+            part.transform.SetParent(go.transform, false);
+            if (id == "stone")
             {
-                var c = new Vector2Int(x, y);
-                if (occupied.Contains(c) || BlocksEntrance(c, r)) continue;
-                foreach (var d in Dirs4)
-                    if (!IsFloor(c + d)) options.Add((c, d));
+                part.transform.localPosition = new Vector3((i - 1) * 0.45f, 0.18f, (i % 2) * 0.3f);
+                part.transform.localScale = new Vector3(0.5f, 0.35f, 0.45f);
             }
-        if (options.Count == 0) return;
-        var pick = Pick(options);
-        Spawn(wallTorchPrefab, pick.cell, Quaternion.LookRotation(new Vector3(pick.wall.x, 0, pick.wall.y)));
+            else
+            {
+                part.transform.localPosition = new Vector3(0, 0.08f + i * 0.05f, (i - 1) * 0.25f);
+                part.transform.localRotation = Quaternion.Euler(90, i * 35f, 0);
+                part.transform.localScale = new Vector3(0.12f, 0.8f, 0.12f);
+            }
+            part.GetComponent<Renderer>().material.color = id == "stone" ? new Color(0.45f, 0.44f, 0.42f) : new Color(0.4f, 0.27f, 0.15f);
+        }
+        return go;
+    }
+
+    void SpawnAnvil(Vector2Int c, Quaternion rot)
+    {
+        GameObject go;
+        if (anvilPrefab != null) go = Instantiate(anvilPrefab, GridTile.CellToWorld(c), rot, root);
+        else
+        {
+            go = new GameObject("Anvil");
+            go.transform.SetParent(root, false);
+            go.transform.SetPositionAndRotation(GridTile.CellToWorld(c), rot);
+            var stump = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            stump.transform.SetParent(go.transform, false);
+            stump.transform.localPosition = new Vector3(0, 0.5f, 0);
+            stump.transform.localScale = new Vector3(1.4f, 0.5f, 1.4f);
+            stump.GetComponent<Renderer>().material.color = new Color(0.35f, 0.22f, 0.12f);
+            var top = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            top.transform.SetParent(go.transform, false);
+            top.transform.localPosition = new Vector3(0, 1.25f, 0);
+            top.transform.localScale = new Vector3(0.9f, 0.5f, 2f);
+            top.GetComponent<Renderer>().material.color = new Color(0.22f, 0.22f, 0.24f);
+        }
+        if (go.GetComponent<Anvil>() == null) go.AddComponent<Anvil>();
     }
 
     // ---- 다른 스크립트가 쓰는 것 ----

@@ -5,8 +5,9 @@ using UnityEngine.UI;
 
 // 미니맵: 가 본 곳만 안개가 걷힌다. 한 칸 밟을 때마다 주변(횃불을 들면 반경 2, 없으면 1)이 밝혀진다.
 // - 미리보기(우상단): 내 주변만 보이고 나를 따라온다. 화면과 같은 방향이 되도록 45° 돌려서 그린다.
-// - 미리보기를 클릭하거나 [M]: 전체 맵 + 범례. 다시 클릭·[M]·[Esc]로 닫는다.
-// 지형은 텍스처에 칸 단위로 칠하고(안 밝힌 칸은 투명 = 안개), 오브젝트는 그 위에 아이콘으로 얹는다.
+// - 미리보기를 클릭하거나 [M]: 전체 맵 + 범례 + 탐색 %. 다시 클릭·[M]·[Esc]로 닫는다.
+// 지형은 텍스처에 칸 단위로 칠하고(안 밝힌 칸은 투명 = 안개), 오브젝트는 그 위에 그림 아이콘으로 얹는다.
+// 아이콘 그림은 Resources/MapIcons (VARCO로 만든 픽셀 아이콘).
 public class Minimap : MonoBehaviour
 {
     public PlayerStats player;
@@ -24,15 +25,20 @@ public class Minimap : MonoBehaviour
     static readonly Color WallColor = new Color(0.17f, 0.15f, 0.13f);
     static readonly Color SeenColor = new Color(0.25f, 0.55f, 0.8f, 0.45f);   // 보이기만 한 바닥 (밟으면 또렷해진다)
     static readonly Color SeenEdge = new Color(0.2f, 0.45f, 0.7f, 0.55f);
-    static readonly Color DoorWood = new Color(0.62f, 0.4f, 0.22f), DoorIron = new Color(0.62f, 0.66f, 0.72f), DoorLocked = new Color(1f, 0.78f, 0.25f);
+
+    // 아이콘 색 (그림이 흰색인 것만 이 색으로 물든다)
+    static readonly Color MeColor = new Color(1f, 0.86f, 0.2f);
+    static readonly Color EnemyColor = new Color(1f, 0.22f, 0.18f);
+    static readonly Color TorchOff = Color.white, TorchOn = new Color(1f, 0.6f, 0.15f);
+    static readonly Color DoorWood = new Color(0.78f, 0.52f, 0.3f), DoorIron = new Color(0.7f, 0.74f, 0.8f);
 
     MapData map;
-    Transform door;
     Texture2D tex;
     MapView preview, full;
     Canvas fullCanvasComp;
     GridClickMover mover;
     GameObject fullRoot;
+    Text fullTitle;
     Vector2Int lastCell = new Vector2Int(int.MinValue, 0);
     bool lastTorch;
     float iconTimer;
@@ -41,9 +47,17 @@ public class Minimap : MonoBehaviour
     public struct Icon
     {
         public Vector2Int cell;
-        public string glyph;
+        public string sprite;     // Resources/MapIcons 안의 이름
         public Color color;
         public float size;
+        public float? yaw;        // 있으면 그 방향을 가리키는 화살표, 없으면 똑바로 선 아이콘
+    }
+
+    static readonly Dictionary<string, Sprite> sprites = new Dictionary<string, Sprite>();
+    static Sprite IconSprite(string name)
+    {
+        if (!sprites.TryGetValue(name, out var s)) sprites[name] = s = Resources.Load<Sprite>("MapIcons/" + name);
+        return s;
     }
 
     void Awake() => instance = this;
@@ -51,8 +65,6 @@ public class Minimap : MonoBehaviour
     void Start()
     {
         map = new MapData();
-        var doorGo = GameObject.Find("P_GiantDoor");
-        door = doorGo != null ? doorGo.transform : null;
         tex = new Texture2D(map.bounds.width * Px, map.bounds.height * Px, TextureFormat.RGBA32, false)
         {
             filterMode = FilterMode.Point,
@@ -73,7 +85,7 @@ public class Minimap : MonoBehaviour
         if (kb != null)
         {
             if (FullOpen && kb.escapeKey.wasPressedThisFrame) { EscFrame = Time.frameCount; SetFull(false); }
-            else if (kb.mKey.wasPressedThisFrame && !TitleScreen.IsOpen && !InventoryUI.IsOpen && !PauseMenu.IsOpen) SetFull(!FullOpen);
+            else if (kb.mKey.wasPressedThisFrame && !TitleScreen.IsOpen && !InventoryUI.IsOpen && !PauseMenu.IsOpen && !CraftUI.IsOpen) SetFull(!FullOpen);
         }
         if (player == null || map == null || TitleScreen.IsOpen) return;
 
@@ -86,6 +98,7 @@ public class Minimap : MonoBehaviour
             map.Reveal(cell, player.TorchLit ? radiusWithTorch : radiusWithoutTorch);
             map.Visit(cell);
             iconTimer = 0f;
+            if (FullOpen) RefreshTitle();
         }
 
         // 아이콘(몬스터 위치 등)은 자주 바뀌니 짧은 간격으로 다시 모은다
@@ -110,8 +123,10 @@ public class Minimap : MonoBehaviour
     void SetFull(bool open)
     {
         fullRoot.SetActive(open);
-        if (open) { GatherIcons(); full.SetIcons(icons); }
+        if (open) { GatherIcons(); full.SetIcons(icons); RefreshTitle(); }
     }
+
+    void RefreshTitle() => fullTitle.text = $"지도   <size=22><color=#9e9480>탐색 {Mathf.FloorToInt(map.ExploredPercent())}%</color></size>";
 
     // 전체 지도에서 마우스 아래 칸 — 직접 밟아 본 곳이고 지금 서 있는 칸이 아니면 이동할 수 있다
     Vector2Int? TravelCell()
@@ -157,32 +172,30 @@ public class Minimap : MonoBehaviour
         tex.Apply();
     }
 
-    // 밝혀진 칸에 있는 오브젝트를 아이콘으로 (자동 매핑)
+    // 밝혀진 칸에 있는 오브젝트를 아이콘으로
     void GatherIcons()
     {
         icons.Clear();
-        void Add(Vector2Int c, string g, Color col, float size = 1f)
+        void Add(Vector2Int c, string s, Color col, float size = 1f, float? yaw = null)
         {
-            if (map.IsExplored(c)) icons.Add(new Icon { cell = c, glyph = g, color = col, size = size });
+            if (map.IsExplored(c)) icons.Add(new Icon { cell = c, sprite = s, color = col, size = size, yaw = yaw });
         }
-        foreach (var s in FindObjectsByType<StairsEvent>(FindObjectsSortMode.None)) Add(s.Cell, "▲", new Color(0.55f, 0.78f, 1f), 1.2f);
-        if (door != null) Add(GridTile.WorldToCell(door.position), "▬", new Color(0.86f, 0.72f, 0.42f), 1.2f);
-        foreach (var c in FindObjectsByType<ChestEvent>(FindObjectsSortMode.None)) if (!c.Used) Add(c.Cell, "■", new Color(0.95f, 0.78f, 0.3f));
-        foreach (var w in FindObjectsByType<WallTorch>(FindObjectsSortMode.None)) Add(w.Cell, "●", w.IsOn ? new Color(1f, 0.62f, 0.2f) : new Color(0.45f, 0.36f, 0.28f), 0.8f);
-        foreach (var d in Door.All) if (!d.IsOpen) Add(d.Cell, "■", d.locked ? DoorLocked : d.kind == Door.Kind.Iron ? DoorIron : DoorWood, 0.75f);
-        foreach (var b in FindObjectsByType<BonesEvent>(FindObjectsSortMode.None)) if (!b.Used) Add(b.Cell, "×", new Color(0.92f, 0.9f, 0.82f), 1.2f);
-        foreach (var t in FindObjectsByType<ToolsEvent>(FindObjectsSortMode.None)) if (!t.Used) Add(t.Cell, "♦", new Color(0.72f, 0.72f, 0.78f));
-        foreach (var g in FindObjectsByType<GoblinEvent>(FindObjectsSortMode.None)) Add(g.Cell, "●", new Color(0.5f, 0.85f, 0.4f));
+        foreach (var s in FindObjectsByType<StairsEvent>(FindObjectsSortMode.None)) Add(s.Cell, s.down ? "stairs_down" : "stairs_up", Color.white, 1.3f);
+        foreach (var a in FindObjectsByType<Anvil>(FindObjectsSortMode.None)) Add(a.Cell, "anvil", Color.white, 1.2f);
+        foreach (var c in FindObjectsByType<ChestEvent>(FindObjectsSortMode.None)) if (!c.Used) Add(c.Cell, "chest", Color.white, 1.1f);
+        foreach (var w in FindObjectsByType<WallTorch>(FindObjectsSortMode.None)) Add(w.Cell, "torch", w.IsOn ? TorchOn : TorchOff, 1.5f);
+        foreach (var d in Door.All)
+            if (!d.IsOpen) Add(d.Cell, d.locked ? "door_locked" : "door", d.locked ? Color.white : d.kind == Door.Kind.Iron ? DoorIron : DoorWood, 1f);
+        foreach (var b in FindObjectsByType<BonesEvent>(FindObjectsSortMode.None)) if (!b.Used) Add(b.Cell, "skull", Color.white, 1.1f);
 
-        // 몬스터는 지금 보이는 곳(밝히는 반경 바로 바깥까지, 또는 빛 안)에 있을 때만
+        // 적(몬스터·고블린)은 지금 보이는 곳(밝히는 반경 바로 바깥까지, 또는 빛 안)에 있을 때만, 바라보는 쪽을 가리키는 빨간 화살표
         int sight = (player.TorchLit ? radiusWithTorch : radiusWithoutTorch) + 1;
         var me = GridTile.WorldToCell(player.transform.position);
+        bool Visible(Vector2Int c) { var d = c - me; return Mathf.Max(Mathf.Abs(d.x), Mathf.Abs(d.y)) <= sight || LightSources.IsLit(c); }
         foreach (var m in FindObjectsByType<Monster>(FindObjectsSortMode.None))
-        {
-            if (!m.enabled || m.Dead) continue;
-            var d = m.Cell - me;
-            if (Mathf.Max(Mathf.Abs(d.x), Mathf.Abs(d.y)) <= sight || m.InLight) Add(m.Cell, "●", new Color(0.95f, 0.25f, 0.2f));
-        }
+            if (m.enabled && !m.Dead && Visible(m.Cell)) Add(m.Cell, "arrow", EnemyColor, 1.1f, m.transform.eulerAngles.y);
+        foreach (var g in FindObjectsByType<GoblinEvent>(FindObjectsSortMode.None))
+            if (!g.Ally && Visible(g.Cell)) Add(g.Cell, "arrow", EnemyColor, 1.1f, g.transform.eulerAngles.y);
     }
 
     // ---- UI 생성 ----
@@ -218,8 +231,8 @@ public class Minimap : MonoBehaviour
         UIKit.Place(panel.rectTransform, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(1180, 860));
         panel.gameObject.AddComponent<Outline>().effectColor = new Color(0.55f, 0.45f, 0.3f, 0.8f);
         panel.gameObject.AddComponent<UIClickCatcher>().onClick = TryTravel;   // 지나온 곳을 누르면 그리로 이동
-        var title = UIKit.Text(panel.rectTransform, "지도", 34, TextAnchor.UpperLeft, UIKit.Gold);
-        UIKit.Place(title.rectTransform, new Vector2(0, 1), new Vector2(36, -24), new Vector2(300, 44));
+        fullTitle = UIKit.Text(panel.rectTransform, "지도", 34, TextAnchor.UpperLeft, UIKit.Gold);
+        UIKit.Place(fullTitle.rectTransform, new Vector2(0, 1), new Vector2(36, -24), new Vector2(500, 44));
         var close = UIKit.Text(panel.rectTransform, "지나온 곳을 누르면 그곳으로 이동 · [M] 닫기", 18, TextAnchor.UpperRight, UIKit.Dim);
         UIKit.Place(close.rectTransform, new Vector2(1, 1), new Vector2(-36, -30), new Vector2(600, 30));
 
@@ -231,34 +244,33 @@ public class Minimap : MonoBehaviour
         full = new MapView(area, tex, map.bounds, unit);
         full.CenterOn(new Vector2(map.bounds.center.x - 0.5f, map.bounds.center.y - 0.5f));
 
-        // 범례
-        (string g, Color c, string label)[] legend =
+        // 범례 (간단하게)
+        (string sprite, Color c, float rot, string label)[] legend =
         {
-            ("▲", new Color(1f, 0.92f, 0.6f), "나"),
-            ("●", new Color(0.95f, 0.25f, 0.2f), "몬스터 (보일 때만)"),
-            ("●", new Color(0.5f, 0.85f, 0.4f), "고블린"),
-            ("■", new Color(0.95f, 0.78f, 0.3f), "상자"),
-            ("●", new Color(1f, 0.62f, 0.2f), "벽 횃불 (불 붙음)"),
-            ("●", new Color(0.45f, 0.36f, 0.28f), "벽 횃불 (꺼짐)"),
-            ("×", new Color(0.92f, 0.9f, 0.82f), "누군가의 뼈"),
-            ("♦", new Color(0.72f, 0.72f, 0.78f), "곡괭이·도끼"),
-            ("▬", new Color(0.86f, 0.72f, 0.42f), "거대한 문"),
-            ("■", DoorWood, "나무문 (닫힘)"),
-            ("■", DoorIron, "철문 (닫힘, 두 번 밀기)"),
-            ("■", DoorLocked, "잠긴 문 (열쇠 필요)"),
-            ("▲", new Color(0.55f, 0.78f, 1f), "계단"),
+            ("arrow", MeColor, 0f, "나"),
+            ("arrow", EnemyColor, 0f, "적 (보일 때만)"),
+            ("chest", Color.white, 0f, "보물상자"),
+            ("skull", Color.white, 0f, "누군가의 시체"),
+            ("torch", TorchOn, 0f, "벽 횃불 (흰색 = 꺼짐)"),
+            ("door", DoorWood, 0f, "문"),
+            ("door_locked", Color.white, 0f, "잠긴 문"),
+            ("stairs_up", Color.white, 0f, "올라가는 계단"),
+            ("anvil", Color.white, 0f, "모루 (대장간)"),
         };
         var lh = UIKit.Text(panel.rectTransform, "범례", 24, TextAnchor.UpperLeft, UIKit.Gold);
         UIKit.Place(lh.rectTransform, new Vector2(1, 1), new Vector2(-40, -110), new Vector2(260, 32));
         for (int i = 0; i < legend.Length; i++)
         {
-            var g = UIKit.Text(panel.rectTransform, legend[i].g, 22, TextAnchor.MiddleCenter, legend[i].c);
-            UIKit.Place(g.rectTransform, new Vector2(1, 1), new Vector2(-270, -150 - i * 34), new Vector2(30, 32));
+            var g = UIKit.Image(panel.rectTransform, "LegendIcon", legend[i].c);
+            g.sprite = IconSprite(legend[i].sprite);
+            g.preserveAspect = true;
+            UIKit.Place(g.rectTransform, new Vector2(1, 1), new Vector2(-262, -150 - i * 40), new Vector2(32, 32));
+            g.rectTransform.localRotation = Quaternion.Euler(0, 0, legend[i].rot);
             var t = UIKit.Text(panel.rectTransform, legend[i].label, 19, TextAnchor.MiddleLeft, GameLog.Info);
-            UIKit.Place(t.rectTransform, new Vector2(1, 1), new Vector2(-40, -150 - i * 34), new Vector2(220, 32));
+            UIKit.Place(t.rectTransform, new Vector2(1, 1), new Vector2(-40, -150 - i * 40), new Vector2(210, 32));
         }
-        var fog = UIKit.Text(panel.rectTransform, "파란 곳은 눈으로만 본 곳, 밟은 곳은 또렷하게.\n검은 곳은 아직 모르는 곳.\n횃불을 들면 더 넓게 보인다.", 17, TextAnchor.UpperLeft, UIKit.Dim);
-        UIKit.Place(fog.rectTransform, new Vector2(1, 1), new Vector2(-40, -150 - legend.Length * 34 - 6), new Vector2(270, 80));
+        var fog = UIKit.Text(panel.rectTransform, "파란 곳은 눈으로만 본 곳, 밟은 곳은 또렷하게.\n횃불을 들면 더 넓게 보인다.", 17, TextAnchor.UpperLeft, UIKit.Dim);
+        UIKit.Place(fog.rectTransform, new Vector2(1, 1), new Vector2(-40, -150 - legend.Length * 40 - 6), new Vector2(270, 60));
 
         fullRoot.SetActive(false);
     }
@@ -269,9 +281,9 @@ public class Minimap : MonoBehaviour
         readonly RectTransform content, iconLayer;
         readonly RectInt bounds;
         readonly float unit;
-        readonly List<Text> pool = new List<Text>();
+        readonly List<Image> pool = new List<Image>();
         Image hover;
-        readonly Text playerMark;
+        readonly Image playerMark;
         static readonly Quaternion Rot = Quaternion.Euler(0, 0, 45f);
 
         public MapView(RectTransform parent, Texture tex, RectInt bounds, float unit)
@@ -294,13 +306,19 @@ public class Minimap : MonoBehaviour
             iconLayer.SetParent(content, false);
             UIKit.Stretch(iconLayer);
 
-            playerMark = MakeGlyph("▲", new Color(1f, 0.92f, 0.6f), 1.3f);
+            playerMark = MakeIcon();
+            playerMark.sprite = IconSprite("arrow");
+            playerMark.color = MeColor;
+            playerMark.rectTransform.sizeDelta = Vector2.one * unit * 1.5f;
         }
 
         // 칸 좌표(소수 가능) → 지도 안 위치
         Vector2 Local(Vector2 cell) => new Vector2(
             (cell.x - bounds.xMin + 0.5f) * unit - bounds.width * unit * 0.5f,
             (cell.y - bounds.yMin + 0.5f) * unit - bounds.height * unit * 0.5f);
+
+        // 세계 방향(yaw: +Z가 0°, 시계 방향) → 지도 안 회전. 화살표 그림은 오른쪽(+X)을 가리킨다.
+        static Quaternion ArrowRotation(float yaw) => Quaternion.Euler(0, 0, 90f - yaw);
 
         public void CenterOn(Vector2 cell) => content.anchoredPosition = -(Vector2)(Rot * Local(cell));
 
@@ -332,37 +350,38 @@ public class Minimap : MonoBehaviour
         public void SetPlayer(Vector2 cell, float yaw)
         {
             playerMark.rectTransform.anchoredPosition = Local(cell);
-            // 세계 방향(yaw: +Z가 0°, 시계 방향) → 지도 안 회전 (지도 위쪽이 +Z)
-            playerMark.rectTransform.localRotation = Quaternion.Euler(0, 0, -yaw);
+            playerMark.rectTransform.localRotation = ArrowRotation(yaw);
             playerMark.transform.SetAsLastSibling();
         }
 
         public void SetIcons(List<Icon> icons)
         {
-            while (pool.Count < icons.Count) pool.Add(MakeGlyph("", Color.white, 1f));
+            while (pool.Count < icons.Count) pool.Add(MakeIcon());
             for (int i = 0; i < pool.Count; i++)
             {
-                var t = pool[i];
-                if (i >= icons.Count) { t.enabled = false; continue; }
+                var img = pool[i];
+                if (i >= icons.Count) { img.enabled = false; continue; }
                 var ic = icons[i];
-                t.enabled = true;
-                t.text = ic.glyph;
-                t.color = ic.color;
-                t.fontSize = Mathf.RoundToInt(unit * 0.8f * ic.size);
-                t.rectTransform.anchoredPosition = Local(ic.cell);
+                img.enabled = true;
+                img.sprite = IconSprite(ic.sprite);
+                img.color = ic.color;
+                img.rectTransform.sizeDelta = Vector2.one * unit * 1.2f * ic.size;
+                img.rectTransform.anchoredPosition = Local(ic.cell);
+                // 화살표는 바라보는 방향으로, 나머지는 화면에서 똑바로 서 있게
+                img.rectTransform.localRotation = ic.yaw != null ? ArrowRotation(ic.yaw.Value) : Quaternion.Euler(0, 0, -45f);
             }
             playerMark.transform.SetAsLastSibling();
         }
 
-        Text MakeGlyph(string g, Color c, float size)
+        Image MakeIcon()
         {
-            var t = UIKit.Text(iconLayer, g, Mathf.RoundToInt(unit * 0.8f * size), TextAnchor.MiddleCenter, c);
-            var r = t.rectTransform;
+            var img = new GameObject("Icon", typeof(Image)).GetComponent<Image>();
+            img.transform.SetParent(iconLayer, false);
+            img.raycastTarget = false;
+            img.preserveAspect = true;
+            var r = img.rectTransform;
             r.anchorMin = r.anchorMax = r.pivot = new Vector2(0.5f, 0.5f);
-            r.sizeDelta = new Vector2(unit * 1.6f, unit * 1.6f);
-            r.localRotation = Quaternion.Euler(0, 0, -45f);   // 아이콘은 똑바로 서 있게
-            t.gameObject.AddComponent<Outline>().effectColor = new Color(0, 0, 0, 0.8f);
-            return t;
+            return img;
         }
     }
 }

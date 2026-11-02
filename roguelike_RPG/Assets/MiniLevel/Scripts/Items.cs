@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 
-public enum ItemKind { Food, Torch, Tool, Equipment }
+public enum ItemKind { Food, Torch, Tool, Equipment, Material }
 
 // 장비 칸: 모자 / 상의 / 하의 / 신발 / 무기. 상하의(일체형)는 상의·하의 두 칸을 함께 차지한다.
 public enum EquipSlot { None, Hat, Top, Bottom, TopBottom, Shoes, Weapon }
@@ -46,6 +46,26 @@ public static class Items
     {
         id = "tunic", name = "누더기 튜닉", kind = ItemKind.Equipment, slot = EquipSlot.Top,
         desc = "해지고 기운 천 튜닉에 밧줄 허리띠.\n눈을 떴을 때 입고 있던 유일한 옷.",
+    };
+    public static readonly ItemDef Branch = new ItemDef
+    {
+        id = "branch", name = "나뭇가지", kind = ItemKind.Material, stackable = true,
+        desc = "미로 바닥에 떨어져 있던 마른 나뭇가지.\n모루에서 횃불이나 무기를 만드는 재료.",
+    };
+    public static readonly ItemDef Stone = new ItemDef
+    {
+        id = "stone", name = "돌멩이", kind = ItemKind.Material, stackable = true,
+        desc = "모서리가 날카로운 주먹만 한 돌.\n모루에서 돌도끼를 만드는 재료.",
+    };
+    public static readonly ItemDef Club = new ItemDef
+    {
+        id = "club", name = "나무 몽둥이", kind = ItemKind.Equipment, slot = EquipSlot.Weapon, attackMin = 2, attackMax = 5,
+        desc = "굵은 가지를 깎아 만든 몽둥이.\n맨손보다는 낫다.",
+    };
+    public static readonly ItemDef StoneAxe = new ItemDef
+    {
+        id = "stoneaxe", name = "돌도끼", kind = ItemKind.Equipment, slot = EquipSlot.Weapon, attackMin = 3, attackMax = 8,
+        desc = "날카롭게 깨뜨린 돌날을 나뭇가지에 묶은 도끼.\n투박하지만 묵직하게 들어간다.",
     };
     public static readonly ItemDef Key = new ItemDef
     {

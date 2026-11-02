@@ -3,6 +3,8 @@ using UnityEngine;
 // 위로 올라가는 계단. 다가가서 클릭하면 오를지 묻는다. (2층은 아직 없어서, 오르면 1층 클리어로 처음 화면에 돌아간다)
 public class StairsEvent : Interactable
 {
+    public bool down;   // 내려가는 계단 (지도 아이콘이 다르다. 1층엔 없음)
+
     public override void Interact(PlayerStats player)
     {
         DialogUI.Show("위로 올라가는 돌계단이다. 오를까?",
