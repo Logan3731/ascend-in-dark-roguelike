@@ -287,6 +287,8 @@ public class PlayerStats : MonoBehaviour, LightSources.ISource
         OnChanged?.Invoke();
     }
 
+    public void RestoreMp() { Mp = maxMp; OnChanged?.Invoke(); }
+
     public void CurePoison()
     {
         if (PoisonTurns == 0) return;

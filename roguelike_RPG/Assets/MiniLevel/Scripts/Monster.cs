@@ -298,6 +298,15 @@ public class Monster : Interactable
 
     public void FallAsleep() => Asleep = true;
 
+    // 소리(곡괭이 등)에 깬다
+    public void WakeFromNoise()
+    {
+        if (!Asleep) return;
+        Asleep = false;
+        GameLog.Add($"소리에 {displayName}{Josa("이", "가")} 깼다!", GameLog.Bad);
+        WakeUp();
+    }
+
     bool TryWake(int dist)
     {
         if (!sleepHintShown && dist <= 4)

@@ -194,10 +194,17 @@ MonoBehaviour:
   branchPrefab: {fileID: 397479955229502043, guid: 8709bce99f0ac3642b2867c54b6e1ad3, type: 3}
   stonePrefab: {fileID: 2875777180985103628, guid: 7f05c16c9f6155c40a1d9ddb7f16824f, type: 3}
   potPrefab: {fileID: 7668175463249768556, guid: 4aa7d8cf32e19d84896fb2f9b339fca6, type: 3}
+  bookshelfPrefab: {fileID: 4322363378392759715, guid: 5282a62fc60cf104b8d730cd60677556, type: 3}
+  coffinPrefab: {fileID: 5489923462418813181, guid: 3e6410c334a1e3c4ca14d4d4b6ed9515, type: 3}
+  wellPrefab: {fileID: 2664938364998916982, guid: b60989c9abcb50641b39316ec54b24e0, type: 3}
   wallTorches: 12
   branches: 14
   stones: 10
   pots: 16
+  bookshelves: 4
+  coffins: 3
+  wells: 2
+  secretRooms: 2
   player: {fileID: 1538796691}
   giantDoor: {fileID: 1785813250}
   tools: {fileID: 1811694408}

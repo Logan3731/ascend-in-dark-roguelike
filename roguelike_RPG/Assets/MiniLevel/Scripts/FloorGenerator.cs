@@ -33,11 +33,13 @@ public class FloorGenerator : MonoBehaviour
     public GameObject chestSmall, chestBig, chestElite;
     public GameObject rat, bat, slime, wolf;
     public GameObject anvilPrefab, branchPrefab, stonePrefab, potPrefab;
+    public GameObject bookshelfPrefab, coffinPrefab, wellPrefab;
 
     [Header("배치 수")]
     public int wallTorches = 12;
     public int branches = 14, stones = 10;
     public int pots = 16;
+    public int bookshelves = 4, coffins = 3, wells = 2, secretRooms = 2;
 
     [Header("씬에 있는 것 (위치만 옮긴다)")]
     public Transform player;
@@ -120,6 +122,7 @@ public class FloorGenerator : MonoBehaviour
                 if (grid[x, y] == C.Solid && !Grow(start.rect, 1).Contains(new Vector2Int(x, y))) GrowMaze(new Vector2Int(x, y));
         ConnectRegions();
         TrimDeadEnds();
+        CarveSecretRooms(secretRooms);   // 무너진 벽 너머의 숨겨진 방 (곡괭이로 판다)
         CollectDoors();
         ComputeDistances();
     }
@@ -444,6 +447,12 @@ public class FloorGenerator : MonoBehaviour
         // 항아리: 방 가장자리에 (깨 보면 무언가 나올지도)
         ScatterPots(pots + R(-3, 4));
 
+        // 방 소품: 책장·관(벽에 붙여)·우물(가운데 쪽), 그리고 숨겨진 방
+        PlaceProps<Bookshelf>(bookshelfPrefab, bookshelves, true);
+        PlaceProps<Coffin>(coffinPrefab, coffins, true);
+        PlaceProps<Well>(wellPrefab, wells, false);
+        BuildSecretRooms();
+
         root.gameObject.SetActive(true);
     }
 
@@ -652,6 +661,121 @@ public class FloorGenerator : MonoBehaviour
             var p = go.GetComponent<Pickup>() ?? go.AddComponent<Pickup>();
             p.itemId = id;
             p.triggerOnEnter = true;
+        }
+    }
+
+    // ---- 숨겨진 방 ----
+    // 바닥 바로 옆 벽 한 칸(W) 너머에 3×3 바위 덩어리가 통째로 비어 있으면 거기를 파서 방을 만들고, W에는 무너진 돌무더기를 둔다.
+    readonly List<(Vector2Int rubble, RectInt room)> secrets = new List<(Vector2Int, RectInt)>();
+
+    void CarveSecretRooms(int count)
+    {
+        var cands = new List<(Vector2Int w, Vector2Int d)>();
+        for (int x = 2; x < width - 2; x++)
+            for (int y = 2; y < height - 2; y++)
+            {
+                var w = new Vector2Int(x, y);
+                if (grid[x, y] != C.Solid || Grow(start.rect, 2).Contains(w)) continue;
+                foreach (var d in Dirs4)
+                {
+                    var f = w - d;   // 이쪽이 원래 바닥, 반대쪽(d)으로 방을 판다
+                    if (!IsFloor(f) || At(f) == C.Door || NextToOpening(f)) continue;
+                    if (FitsSecret(w, d)) cands.Add((w, d));
+                }
+            }
+        Shuffle(cands);
+        foreach (var (w, d) in cands)
+        {
+            if (secrets.Count >= count) break;
+            if (!FitsSecret(w, d)) continue;   // 앞서 판 방과 겹칠 수 있으니 다시 확인
+            var room = SecretRect(w, d);
+            for (int x = room.xMin; x < room.xMax; x++) for (int y = room.yMin; y < room.yMax; y++) grid[x, y] = C.Room;
+            grid[w.x, w.y] = C.Corridor;
+            secrets.Add((w, room));
+            occupied.Add(w);               // 돌무더기 자리와
+            occupied.Add(Center(room));    // 상자 자리는 다른 것이 차지하지 못하게
+        }
+    }
+
+    static RectInt SecretRect(Vector2Int w, Vector2Int d)
+    {
+        var c = w + d * 2;   // 3×3 방의 가운데
+        return new RectInt(c.x - 1, c.y - 1, 3, 3);
+    }
+
+    // 방 자리와 그 둘레 한 칸이 모두 바위이고 맵 안이어야 한다 (W는 빼고)
+    bool FitsSecret(Vector2Int w, Vector2Int d)
+    {
+        var r = Grow(SecretRect(w, d), 1);
+        if (r.xMin < 1 || r.yMin < 1 || r.xMax > width - 1 || r.yMax > height - 1) return false;
+        for (int x = r.xMin; x < r.xMax; x++)
+            for (int y = r.yMin; y < r.yMax; y++)
+            {
+                var c = new Vector2Int(x, y);
+                if (c != w && grid[x, y] != C.Solid) return false;
+            }
+        // W의 옆구리도 바위여야 통로가 한 칸으로 깔끔하다
+        var side = new Vector2Int(d.y, d.x);
+        return !IsFloor(w + side) && !IsFloor(w - side);
+    }
+
+    void BuildSecretRooms()
+    {
+        foreach (var (w, room) in secrets)
+        {
+            occupied.Add(w);
+            // 무너진 돌무더기: 돌멩이 모델 여러 개를 크게 쌓는다
+            var pile = new GameObject("Rubble");
+            pile.transform.SetParent(root, false);
+            pile.transform.position = GridTile.CellToWorld(w);
+            for (int i = 0; i < 6; i++)
+            {
+                GameObject rock;
+                if (stonePrefab != null) rock = Instantiate(stonePrefab, pile.transform);
+                else { rock = GameObject.CreatePrimitive(PrimitiveType.Sphere); rock.transform.SetParent(pile.transform, false); }
+                rock.transform.localPosition = new Vector3(R(-12, 13) * 0.1f, i < 4 ? 0f : 0.9f, R(-12, 13) * 0.1f);
+                rock.transform.localRotation = Quaternion.Euler(R(0, 40), R(0, 360), R(0, 40));
+                rock.transform.localScale = Vector3.one * (2.2f + R(0, 10) * 0.1f);
+            }
+            pile.AddComponent<Rubble>();
+
+            // 방 안: 큰 상자 하나 (가운데)
+            var center = Center(room);
+            occupied.Add(center);
+            var chest = Instantiate(chestBig, GridTile.CellToWorld(center), RandomYaw(), root);
+            chest.GetComponent<ChestEvent>().givesTorch = false;
+        }
+    }
+
+    // ---- 방 소품 ----
+    // againstWall: 벽에 붙여 방 안쪽을 보게 (책장·관), 아니면 방 안쪽 칸 (우물)
+    void PlaceProps<T>(GameObject prefab, int count, bool againstWall) where T : Prop
+    {
+        var open = rooms.FindAll(r => !r.locked);
+        for (int i = 0; i < count && open.Count > 0; i++)
+        {
+            var r = Pick(open);
+            open.Remove(r);   // 한 방에 같은 소품은 하나
+            var cell = FreeCellIn(r.rect, againstWall);
+            if (cell == null) continue;
+            occupied.Add(cell.Value);
+            // 벽 쪽을 등지고 방 안을 보게
+            var face = Quaternion.Euler(0, R(0, 4) * 90f, 0);
+            foreach (var d in Dirs4)
+                if (!IsFloor(cell.Value + d)) { face = Quaternion.LookRotation(new Vector3(-d.x, 0, -d.y)); break; }
+            GameObject go;
+            if (prefab != null) go = Instantiate(prefab, GridTile.CellToWorld(cell.Value), face, root);
+            else
+            {
+                go = new GameObject(typeof(T).Name);
+                go.transform.SetParent(root, false);
+                go.transform.SetPositionAndRotation(GridTile.CellToWorld(cell.Value), face);
+                var box = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                box.transform.SetParent(go.transform, false);
+                box.transform.localPosition = new Vector3(0, 0.8f, 0);
+                box.transform.localScale = new Vector3(2.4f, 1.6f, 1.2f);
+            }
+            if (go.GetComponent<T>() == null) go.AddComponent<T>();
         }
     }
 

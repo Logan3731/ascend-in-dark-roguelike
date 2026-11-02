@@ -61,6 +61,21 @@ public static class Potions
         _ => "눈앞이 환해진다. 주변 반경 7칸의 지도가 밝혀진다.",
     };
 
+    // 책장 등에서 기록을 찾았을 때: 아직 모르는 색 하나의 정체를 알려 준다 (모두 알면 null)
+    public static string RevealOne()
+    {
+        var unknown = new List<ItemDef>();
+        foreach (var d in All) if (!known.Contains(d)) unknown.Add(d);
+        if (unknown.Count == 0) return null;
+        var def = unknown[Random.Range(0, unknown.Count)];
+        var e = effect[def];
+        known.Add(def);
+        string color = colorName[def];
+        def.name = EffectName(e);
+        def.desc = $"{color}.\n{EffectDesc(e)}";
+        return $"{color} = {EffectName(e)}";
+    }
+
     // 사용 확인 창에 보여 줄 한 줄
     public static string Preview(ItemDef def) => known.Contains(def) ? EffectDesc(effect[def]) : "무슨 일이 일어날지 모른다…";
 
