@@ -216,21 +216,40 @@ public class PlayerStats : MonoBehaviour
         OnChanged?.Invoke();
     }
 
+    [Header("횃불 빛 (들었을 때)")]
+    public float torchRange = 34f;        // 손 횃불이 닿는 거리 (한 칸 = 4)
+    public float torchIntensity = 38f;
+    public float glowRange = 32f;         // 머리 위 보조 빛: 주변 바닥을 고르게 밝힌다 (그림자 없음)
+    public float glowIntensity = 20f;
+
     // 횃불이 없거나 꺼져도 완전히 안 보이진 않게: 주변만 희미하게 보이는 차가운 빛으로 바꾼다
-    float litRange, litIntensity;
     Color litColor;
     bool litCached;
+    Light glow;
 
     void ApplyTorchVisual()
     {
         if (torchLight != null)
         {
-            if (!litCached) { litRange = torchLight.range; litIntensity = torchLight.intensity; litColor = torchLight.color; litCached = true; }
-            torchLight.range = TorchLit ? litRange : 6f;
-            torchLight.intensity = TorchLit ? litIntensity : 3f;
+            if (!litCached) { litColor = torchLight.color; litCached = true; }
+            torchLight.range = TorchLit ? torchRange : 6f;
+            torchLight.intensity = TorchLit ? torchIntensity : 3f;
             torchLight.color = TorchLit ? litColor : new Color(0.55f, 0.6f, 0.75f);
             torchLight.shadows = TorchLit ? LightShadows.Soft : LightShadows.None;
         }
+        if (glow == null)
+        {
+            var go = new GameObject("TorchGlow");
+            go.transform.SetParent(transform, false);
+            go.transform.localPosition = new Vector3(0, 5f, 0);
+            glow = go.AddComponent<Light>();
+            glow.type = LightType.Point;
+            glow.shadows = LightShadows.None;
+            glow.color = new Color(1f, 0.68f, 0.38f);
+            glow.range = glowRange;
+            glow.intensity = glowIntensity;
+        }
+        glow.enabled = TorchLit;
         if (torchFlame != null) torchFlame.SetActive(TorchLit);
         if (torchStick != null) torchStick.SetActive(HasTorch && TorchHeld);
     }
