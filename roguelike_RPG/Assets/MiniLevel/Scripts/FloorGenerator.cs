@@ -424,9 +424,9 @@ public class FloorGenerator : MonoBehaviour
             if (R01() < chance) SpawnMonster(FreeCellIn(r.rect, false), null, r.locked ? 1 : 0);
             if (r.hasChest && r.rect.width * r.rect.height >= 25 && R01() < 0.4f) SpawnMonster(FreeCellIn(r.rect, false));
         }
-        SpawnMonster(FreeCellIn(lastRoom.rect, false), wolf, 2);   // 계단 방 문지기
+        SpawnMonster(FreeCellIn(lastRoom.rect, false), wolf, 2, 0.5f);   // 계단 방 문지기
         foreach (var tip in tipChests)   // 막다른 길 상자 앞을 지키는 녀석
-            if (R01() < 0.35f) SpawnMonster(StepBack(tip));
+            if (R01() < 0.35f) SpawnMonster(StepBack(tip), null, 0, 0.6f);
         var corridorCells = new List<Vector2Int>();
         foreach (var kv in dist)
             if (At(kv.Key) == C.Corridor && kv.Value > 10 && !occupied.Contains(kv.Key)) corridorCells.Add(kv.Key);
@@ -434,7 +434,7 @@ public class FloorGenerator : MonoBehaviour
         {
             var c = Pick(corridorCells);
             corridorCells.Remove(c);
-            SpawnMonster(c);
+            SpawnMonster(c, null, 0, 0f);   // 통로를 떠도는 녀석은 깨어 있다
         }
 
         // 재료: 미로 곳곳에 나뭇가지·돌멩이 (밟으면 줍는다)
@@ -569,7 +569,7 @@ public class FloorGenerator : MonoBehaviour
         return false;
     }
 
-    GameObject SpawnMonster(Vector2Int? cell, GameObject kind = null, int levelBonus = 0)
+    GameObject SpawnMonster(Vector2Int? cell, GameObject kind = null, int levelBonus = 0, float sleepChance = 0.85f)
     {
         if (cell == null || !dist.TryGetValue(cell.Value, out var d)) return null;
         float depth = maxDist > 0 ? (float)d / maxDist : 0f;
@@ -581,7 +581,12 @@ public class FloorGenerator : MonoBehaviour
         }
         int level = kind == wolf && levelBonus >= 2 ? levelBonus : 1 + (depth > 0.6f && R01() < 0.5f ? 1 : 0) + levelBonus;
         var go = Spawn(kind, cell, Quaternion.Euler(0, R(0, 360), 0));
-        if (go != null) go.GetComponent<Monster>().level = level;   // 아직 잠든 상태(Awake 전)라 능력치에 반영된다
+        if (go != null)
+        {
+            var m = go.GetComponent<Monster>();
+            m.level = level;   // 아직 깨어나기(Awake) 전이라 능력치에 반영된다
+            if (R01() < sleepChance) m.FallAsleep();   // 대부분 잠들어 있다 → 몰래 다가가 기습
+        }
         return go;
     }
 

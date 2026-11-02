@@ -29,6 +29,7 @@ public class Minimap : MonoBehaviour
     // 아이콘 색 (그림이 흰색인 것만 이 색으로 물든다)
     static readonly Color MeColor = new Color(1f, 0.86f, 0.2f);
     static readonly Color EnemyColor = new Color(1f, 0.22f, 0.18f);
+    static readonly Color SleepColor = new Color(0.62f, 0.42f, 0.5f);   // 잠든 적 (흐린 화살표)
     static readonly Color TorchOff = Color.white, TorchOn = new Color(1f, 0.6f, 0.15f);
     static readonly Color DoorWood = new Color(0.78f, 0.52f, 0.3f), DoorIron = new Color(0.7f, 0.74f, 0.8f);
 
@@ -200,7 +201,7 @@ public class Minimap : MonoBehaviour
         var me = GridTile.WorldToCell(player.transform.position);
         bool Visible(Vector2Int c) { var d = c - me; return Mathf.Max(Mathf.Abs(d.x), Mathf.Abs(d.y)) <= sight || LightSources.IsLit(c); }
         foreach (var m in FindObjectsByType<Monster>(FindObjectsSortMode.None))
-            if (m.enabled && !m.Dead && Visible(m.Cell)) Add(m.Cell, "arrow", EnemyColor, 1.1f, m.transform.eulerAngles.y);
+            if (m.enabled && !m.Dead && Visible(m.Cell)) Add(m.Cell, "arrow", m.Asleep ? SleepColor : EnemyColor, 1.1f, m.transform.eulerAngles.y);
         foreach (var g in FindObjectsByType<GoblinEvent>(FindObjectsSortMode.None))
             if (!g.Ally && Visible(g.Cell)) Add(g.Cell, "arrow", EnemyColor, 1.1f, g.transform.eulerAngles.y);
     }

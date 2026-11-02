@@ -67,7 +67,7 @@ public class Monster : Interactable
     static bool darkHintShown;
     static readonly HashSet<Behavior> hinted = new HashSet<Behavior>();
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-    static void ResetHint() { darkHintShown = false; hinted.Clear(); }
+    static void ResetHint() { darkHintShown = false; hinted.Clear(); sleepHintShown = false; }
 
     bool awake;
     bool isSplitChild;
@@ -126,8 +126,10 @@ public class Monster : Interactable
     {
         if (Dead || player.Dead) return;
         var mover = player.GetComponent<GridClickMover>();
+        ambushed = Asleep;   // 자는 채로 맞으면 기습 — 이번 턴엔 깨는 판정을 하지 않는다
         TurnResolver.BeginTurn(GridTile.WorldToCell(player.transform.position), mover != null ? mover.moveSeconds : 0.3f);
         TurnResolver.ResolveAttacks(player, this);
+        ambushed = false;
     }
 
     // 차례가 와서 플레이어에게 맞는다 (delay: 연출 시작까지 기다릴 시간)
@@ -138,6 +140,17 @@ public class Monster : Interactable
 
         float impact = delay + LungeImpact;   // 내지른 공격이 닿는 순간
         bool strike = player.ConsumeStrike();  // [Q] 강타: 피할 수 없고 두 배
+        if (Asleep)
+        {
+            // 기습: 잠든 적은 피하지 못하고 세 배 (강타면 거기에 두 배 더)
+            int sneak = player.RollAttack() * 3 * (strike ? 2 : 1);
+            GameLog.Add(strike ? "기습 강타!!" : "기습!", GameLog.Good);
+            CameraFollowOcclusion.Shake(0.3f, 0.25f);
+            DamagePopup.Spawn(DamagePopup.Above(this), $"기습 {sneak}!", DamagePopup.Big, 1.8f, impact);
+            StartCoroutine(FlashRed(impact));
+            TakeDamage(sneak, player, delay);
+            return;
+        }
         if (!strike && Random.value < Evasion)
         {
             GameLog.Add($"{displayName}{Josa("이", "가")} 공격을 피했다.", GameLog.Info);
@@ -169,6 +182,11 @@ public class Monster : Interactable
             dmg *= 2;
             GameLog.Add($"{displayName}{Josa("은", "는")} 불에 약하다!", GameLog.Good);
         }
+        if (Asleep)
+        {
+            dmg *= 2;   // 자는 적에게 던지면 기습 (두 배)
+            GameLog.Add("기습!", GameLog.Good);
+        }
         DamagePopup.Spawn(DamagePopup.Above(this), dmg.ToString(), DamagePopup.Hit, 1.1f, delay);
         StartCoroutine(FlashRed(delay));
         GameLog.Add($"던진 {what}{Korean.Josa(what, "이", "가")} {displayName}에게 맞았다.", GameLog.Info);
@@ -193,7 +211,9 @@ public class Monster : Interactable
     void TakeDamage(int amount, PlayerStats player, float delay)
     {
         Hp = Mathf.Max(0, Hp - amount);
+        if (Asleep) { Asleep = false; WakeUp(); }
         awake = true;
+        MakeNoise(4, 0.4f);   // 싸우는 소리에 근처의 잠든 적이 깰 수 있다
         if (bar != null) bar.Refresh();
         if (!Dead)
         {
@@ -240,7 +260,12 @@ public class Monster : Interactable
         WillAttack = false;
         var me = Cell;
         int dist = GridNav.Distance(me, playerCell);
-        if (!awake && dist <= sight)
+        if (Asleep)
+        {
+            if (ambushed) return;   // 지금 기습당하는 중
+            if (!TryWake(dist)) return;
+        }
+        else if (!awake && dist <= sight)
         {
             WakeUp();
             if (behavior == Behavior.Coward) CallPack();
@@ -260,6 +285,48 @@ public class Monster : Interactable
             case Behavior.Skittish: PlanSkittish(me, playerCell, moveSeconds); break;
             case Behavior.Coward: PlanCoward(me, playerCell, turn, moveSeconds); break;
             default: Chase(me, playerCell, turn, moveSeconds, null); break;
+        }
+    }
+
+    // ---- 잠든 적 ----
+    // 가까이 갈수록 잘 깨고, 플레이어가 횃불을 들고 있으면 두 배로 잘 깬다 (빛에 눈을 뜬다).
+    // 몰래 다가가 먼저 때리면 기습(세 배). 싸우는 소리에 근처의 잠든 적이 깰 수도 있다.
+
+    public bool Asleep { get; private set; }
+    bool ambushed;
+    static bool sleepHintShown;
+
+    public void FallAsleep() => Asleep = true;
+
+    bool TryWake(int dist)
+    {
+        if (!sleepHintShown && dist <= 4)
+        {
+            sleepHintShown = true;
+            GameLog.Add("잠든 적이 있다. 몰래 다가가 먼저 때리면 기습(세 배)! 횃불을 들고 있으면 깨우기 쉽다.", GameLog.Info);
+        }
+        float chance = dist <= 1 ? 0.35f : dist == 2 ? 0.18f : dist == 3 ? 0.08f : dist == 4 ? 0.03f : 0f;
+        var player = FindAnyObjectByType<PlayerStats>();
+        if (player != null && player.TorchLit) chance *= 2f;
+        if (Random.value >= chance) return false;
+        Asleep = false;
+        GameLog.Add($"{displayName}{Josa("이", "가")} 잠에서 깼다!", GameLog.Bad);
+        DamagePopup.Spawn(DamagePopup.Above(this), "!", DamagePopup.Big, 1.6f);
+        WakeUp();
+        if (behavior == Behavior.Coward) CallPack();
+        return true;
+    }
+
+    // 소리: 반경 안의 잠든 적이 확률로 깬다
+    void MakeNoise(int radius, float chance)
+    {
+        foreach (var m in FindObjectsByType<Monster>(FindObjectsSortMode.None))
+        {
+            if (m == this || !m.Asleep || m.Dead || !m.enabled) continue;
+            if (GridNav.Distance(m.Cell, Cell) > radius || Random.value >= chance) continue;
+            m.Asleep = false;
+            GameLog.Add($"소란에 {m.displayName}{Korean.Josa(m.displayName, "이", "가")} 깼다!", GameLog.Bad);
+            m.WakeUp();
         }
     }
 
@@ -452,8 +519,9 @@ public class Monster : Interactable
         int called = 0;
         foreach (var m in FindObjectsByType<Monster>(FindObjectsSortMode.None))
         {
-            if (m == this || m.awake || m.Dead || !m.enabled || m.behavior != Behavior.Coward) continue;
+            if (m == this || (m.awake && !m.Asleep) || m.Dead || !m.enabled || m.behavior != Behavior.Coward) continue;
             if (GridNav.Distance(m.Cell, Cell) > 6) continue;
+            m.Asleep = false;
             m.awake = true;
             called++;
         }

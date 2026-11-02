@@ -11,7 +11,7 @@ public class MonsterHealthBar : MonoBehaviour
     RectTransform fill;
     Text label;
     float headHeight;
-    bool lastLit, litKnown;
+    bool lastLit, lastAsleep, litKnown;
 
     public static MonsterHealthBar Create(Monster m)
     {
@@ -71,15 +71,16 @@ public class MonsterHealthBar : MonoBehaviour
         float t = target.MaxHp > 0 ? (float)target.Hp / target.MaxHp : 0f;
         fill.anchorMax = new Vector2(t, 1f);
         // 빛 안이면 이름 흰색(약해짐), 어둠 속이면 빨간색(사나워짐)
-        lastLit = target.InLight; litKnown = true;
+        lastLit = target.InLight; lastAsleep = target.Asleep; litKnown = true;
         string nameColor = lastLit ? "#f2eee6" : "#ff4a3d";
-        label.text = $"<color={nameColor}>{target.Label}</color>  {target.Hp}/{target.MaxHp}";
+        string zz = lastAsleep ? "  <color=#8fb3ff>Zz</color>" : "";   // 잠든 적 (기습 기회)
+        label.text = $"<color={nameColor}>{target.Label}</color>  {target.Hp}/{target.MaxHp}{zz}";
     }
 
     void LateUpdate()
     {
         if (target == null) { Destroy(gameObject); return; }
-        if (!litKnown || target.InLight != lastLit) Refresh();
+        if (!litKnown || target.InLight != lastLit || target.Asleep != lastAsleep) Refresh();
         transform.position = target.transform.position + Vector3.up * headHeight;
         var cam = Camera.main;
         if (cam != null) transform.rotation = cam.transform.rotation;   // 항상 카메라를 향한다
