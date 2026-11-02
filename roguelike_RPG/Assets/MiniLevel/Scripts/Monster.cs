@@ -191,7 +191,7 @@ public class Monster : Interactable
     {
         WillAttack = false;
         var me = Cell;
-        int dist = Mathf.Abs(me.x - playerCell.x) + Mathf.Abs(me.y - playerCell.y);
+        int dist = GridNav.Distance(me, playerCell);
         if (!awake && dist <= sight)
         {
             awake = true;
@@ -204,7 +204,7 @@ public class Monster : Interactable
         }
         if (!awake) return;
 
-        if (dist == 1) { WillAttack = true; return; }
+        if (GridNav.Adjacent(me, playerCell)) { WillAttack = true; return; }
         if (moveEvery > 1 && turn % moveEvery != 0) return;
         var next = StepToward(me, playerCell);
         if (next != null) StartCoroutine(MoveTo(next.Value, moveSeconds));
@@ -252,34 +252,12 @@ public class Monster : Interactable
         return free;
     }
 
-    // 플레이어 옆 칸까지의 BFS 경로에서 첫 걸음
+    // 플레이어 옆 칸(대각선 포함)까지의 최단 경로에서 첫 걸음
     static Vector2Int? StepToward(Vector2Int from, Vector2Int target)
     {
-        var free = FreeCells(target);
-        var prev = new Dictionary<Vector2Int, Vector2Int> { [from] = from };
-        var open = new Queue<Vector2Int>();
-        open.Enqueue(from);
-        while (open.Count > 0)
-        {
-            var cur = open.Dequeue();
-            var d0 = cur - target;
-            if (Mathf.Abs(d0.x) + Mathf.Abs(d0.y) == 1)
-            {
-                if (cur == from) return null;
-                var c = cur;
-                while (prev[c] != from) c = prev[c];
-                return c;
-            }
-            if (prev.Count > 400) break;
-            foreach (var d in Dirs)
-            {
-                var n = cur + d;
-                if (!free.Contains(n) || prev.ContainsKey(n)) continue;
-                prev[n] = cur;
-                open.Enqueue(n);
-            }
-        }
-        return null;
+        var floors = GridNav.Floors();
+        var route = GridNav.FindPath(from, c => GridNav.Adjacent(c, target, floors), FreeCells(target), floors, 400);
+        return route != null && route.Count > 0 ? route[0] : (Vector2Int?)null;
     }
 
     // 칸 위치(루트)는 즉시 옮겨서 다른 몬스터와 겹치지 않게 하고, 모델(자식)만 미끄러지듯 따라간다

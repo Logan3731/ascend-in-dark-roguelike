@@ -4,7 +4,8 @@ using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 
-// 바닥 칸을 클릭하면 그 칸을 목표로 정하고 한 칸씩 이동한다. 한 칸 = 한 턴.
+// 바닥 칸을 클릭하면 그 칸을 목표로 정하고 한 칸씩 이동한다 (8방향, 대각선도 한 칸 = 한 턴).
+// 마우스를 누르고 있으면 커서를 따라 계속 걷는다.
 // 한 칸 갈 때마다 목표까지의 길을 다시 찾는다 (그새 몬스터가 움직였을 수 있으므로).
 // 상호작용 대상을 클릭하면 그 옆까지 걸어가서 상호작용한다. [F] 횃불 들기/내리기, [E] 식량 먹기.
 // 걷는 중에 다른 곳을 누르면 목표만 바뀌고, 지금 걷는 한 칸을 마친 뒤 방향을 튼다.
@@ -15,7 +16,6 @@ public class GridClickMover : MonoBehaviour
     public GameObject targetMarker;
     public Animator animator;   // "Moving" bool: 걷는 동안 true
 
-    static readonly Vector2Int[] Dirs = { Vector2Int.up, Vector2Int.down, Vector2Int.left, Vector2Int.right };
     static readonly int MovingParam = Animator.StringToHash("Moving");
 
     PlayerStats stats;
@@ -25,10 +25,16 @@ public class GridClickMover : MonoBehaviour
     Interactable goalTarget;     // 다가가서 상호작용할 대상
     Transform model;             // 공격 연출용 모델 (첫 번째 자식)
     Vector3 modelHome;
+    float holdTime;              // 마우스를 누르고 있는 시간
+    bool holdFromUI;             // UI 위에서 누르기 시작했으면 따라 걷지 않는다
+    Vector2Int? lastHoldCell;
+    const float HoldDelay = 0.25f;
+    const float TurnPortion = 0.3f;   // 한 칸 걷는 시간 중 몸을 돌리는 데 쓰는 비율
 
     // 이동·공격·연출이 다 끝나야 다음 행동을 받는다
     bool Busy => stepping || Time.time < TurnResolver.BusyUntil;
     bool HasGoal => goalCell != null || goalTarget != null;
+    static bool Blocked => DialogUI.IsOpen || InventoryUI.IsOpen || PauseMenu.IsOpen || TitleScreen.IsOpen || Minimap.FullOpen;
 
     void Start()
     {
@@ -40,11 +46,12 @@ public class GridClickMover : MonoBehaviour
     void Update()
     {
         if (stats != null && stats.Dead) { ClearGoal(); return; }
-        if (DialogUI.IsOpen || InventoryUI.IsOpen || PauseMenu.IsOpen || TitleScreen.IsOpen || Minimap.FullOpen) return;
+        if (Blocked) return;
 
         // 클릭은 언제든 받아서 목표만 바꿔 둔다. 실제 방향 전환은 지금 걷는 한 칸을 마친 뒤에 한다.
         if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame && !PointerOverUI())
             HandleClick();
+        HandleHold();
 
         if (Busy) return;
 
@@ -90,6 +97,24 @@ public class GridClickMover : MonoBehaviour
         // 벽 콜라이더에 막히지 않도록 바닥 높이의 평면과 교차한 지점으로 칸을 정한다.
         var ground = new Plane(Vector3.up, Vector3.zero);
         if (ground.Raycast(ray, out float enter)) SetDestination(GridTile.WorldToCell(ray.GetPoint(enter)));
+    }
+
+    // 누르고 있으면 커서를 따라 계속 걷는다 (목표 칸만 계속 바꿔 준다)
+    void HandleHold()
+    {
+        var mouse = Mouse.current;
+        if (mouse == null || !mouse.leftButton.isPressed) { holdTime = 0f; return; }
+        if (mouse.leftButton.wasPressedThisFrame) { holdTime = 0f; lastHoldCell = null; holdFromUI = PointerOverUI(); return; }
+        holdTime += Time.deltaTime;
+        if (holdFromUI || holdTime < HoldDelay || goalTarget != null) return;
+        var cam = Camera.main;
+        if (cam == null) return;
+        var ray = cam.ScreenPointToRay(mouse.position.ReadValue());
+        if (!new Plane(Vector3.up, Vector3.zero).Raycast(ray, out float enter)) return;
+        var cell = GridTile.WorldToCell(ray.GetPoint(enter));
+        if (cell == lastHoldCell) return;   // 커서가 다른 칸으로 옮겨 갔을 때만 길을 다시 찾는다
+        lastHoldCell = cell;
+        SetDestination(cell);
     }
 
     public void SetDestination(Vector2Int goal)
@@ -155,42 +180,13 @@ public class GridClickMover : MonoBehaviour
         if (!stepping && animator != null) animator.SetBool(MovingParam, false);
     }
 
-    static bool IsNextTo(Vector2Int a, Vector2Int b)
-    {
-        var d = a - b;
-        return Mathf.Abs(d.x) + Mathf.Abs(d.y) <= 1;
-    }
+    static bool IsNextTo(Vector2Int a, Vector2Int b) => a == b || GridNav.Adjacent(a, b);
 
-    // 4방향 BFS. 시작 칸은 제외한 경로를 돌려준다. 갈 수 없으면 null.
+    // 8방향 최단 경로 (GridNav). 시작 칸은 제외. 갈 수 없으면 null.
     static List<Vector2Int> FindPath(Vector2Int start, System.Func<Vector2Int, bool> isGoal)
     {
-        var walkable = new HashSet<Vector2Int>();
-        foreach (var t in FindObjectsByType<GridTile>(FindObjectsSortMode.None)) walkable.Add(t.Cell);
-        foreach (var b in FindObjectsByType<GridBlocker>(FindObjectsSortMode.None))
-            if (b.enabled) walkable.Remove(b.Cell);
-
-        var prev = new Dictionary<Vector2Int, Vector2Int> { [start] = start };
-        var open = new Queue<Vector2Int>();
-        open.Enqueue(start);
-        Vector2Int? found = null;
-        while (open.Count > 0)
-        {
-            var cur = open.Dequeue();
-            if (isGoal(cur) && walkable.Contains(cur)) { found = cur; break; }
-            foreach (var d in Dirs)
-            {
-                var next = cur + d;
-                if (!walkable.Contains(next) || prev.ContainsKey(next)) continue;
-                prev[next] = cur;
-                open.Enqueue(next);
-            }
-        }
-        if (found == null) return null;
-
-        var route = new List<Vector2Int>();
-        for (var c = found.Value; c != start; c = prev[c]) route.Add(c);
-        route.Reverse();
-        return route;
+        var floors = GridNav.Floors();
+        return GridNav.FindPath(start, isGoal, GridNav.Walkable(floors), floors);
     }
 
     void Face(Vector3 worldPos)
@@ -236,16 +232,21 @@ public class GridClickMover : MonoBehaviour
         var from = transform.position;
         var to = GridTile.CellToWorld(cell);
         to.y = from.y;
-        Face(to);
+        // 몸은 걸음 초반에 부드럽게 돌린다 (뚝 꺾이지 않게)
+        var fromRot = transform.rotation;
+        var dir = to - from; dir.y = 0;
+        var toRot = dir.sqrMagnitude > 0.001f ? Quaternion.LookRotation(dir) : fromRot;
 
         for (float t = 0f; t < 1f; t += Time.deltaTime / moveSeconds)
         {
             transform.position = Vector3.Lerp(from, to, t);
+            transform.rotation = Quaternion.Slerp(fromRot, toRot, Mathf.SmoothStep(0f, 1f, t / TurnPortion));
             // 마지막 칸이면 도착 직전에 미리 멈춤 동작으로 넘긴다 (도착 후 걸음이 늦게 끝나지 않도록)
             if (t > 0.8f && animator != null && IsFinalStep(cell)) animator.SetBool(MovingParam, false);
             yield return null;
         }
         transform.position = to;
+        transform.rotation = toRot;
         TurnResolver.ResolveAttacks(stats, null);   // 이동한 턴: 붙어 있던 몬스터만 공격
 
         // 밟으면 발동하는 칸
@@ -260,5 +261,7 @@ public class GridClickMover : MonoBehaviour
             if (goalCell != null && GridTile.WorldToCell(transform.position) == goalCell) ClearGoal();
         }
         stepping = false;
+        // 다음 칸으로 바로 이어 걷는다 (한 프레임 멈칫하지 않게)
+        if (HasGoal && !Busy && !Blocked && !stats.Dead) Advance();
     }
 }
