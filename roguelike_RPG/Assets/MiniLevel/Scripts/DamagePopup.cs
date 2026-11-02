@@ -62,6 +62,7 @@ public class DamagePopup : MonoBehaviour
         ol.effectDistance = new Vector2(2, -2);
         var tr = text.rectTransform;
         tr.anchorMin = Vector2.zero; tr.anchorMax = Vector2.one; tr.offsetMin = tr.offsetMax = Vector2.zero;
+        UIKit.DrawOnTop(gameObject);   // 벽에 가려지지 않게
     }
 
     IEnumerator Run(float delay)

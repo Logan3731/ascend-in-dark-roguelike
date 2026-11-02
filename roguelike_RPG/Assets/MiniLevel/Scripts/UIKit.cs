@@ -12,6 +12,26 @@ public static class UIKit
     static Font font;
     public static Font Font => font != null ? font : (font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf"));
 
+    // 월드 공간 UI(머리 위 체력바·데미지 숫자)가 벽에 가려지지 않도록 항상 위에 그리는 재질
+    static Material worldOnTop;
+    public static Material WorldOnTop
+    {
+        get
+        {
+            if (worldOnTop == null)
+            {
+                worldOnTop = new Material(Shader.Find("UI/Default"));
+                worldOnTop.SetInt("unity_GUIZTestMode", (int)UnityEngine.Rendering.CompareFunction.Always);
+            }
+            return worldOnTop;
+        }
+    }
+
+    public static void DrawOnTop(GameObject root)
+    {
+        foreach (var g in root.GetComponentsInChildren<Graphic>(true)) g.material = WorldOnTop;
+    }
+
     public static RectTransform Canvas(Transform parent, string name, int order)
     {
         var go = new GameObject(name, typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));

@@ -38,6 +38,14 @@ public class Monster : Interactable
     public bool WillAttack { get; private set; }           // 이번 턴에 이동 대신 공격한다
     public string Label => $"Lv.{level} {displayName}";
 
+    // 빛 안이면 약해지고(이름 흰색) 어둠 속이면 사나워진다(이름 빨간색)
+    public bool InLight => LightSources.IsLit(Cell);
+    const float LitDamage = 0.75f, DarkDamage = 1.3f;
+    float Evasion => InLight ? evasion * 0.5f : Mathf.Min(0.9f, evasion + 0.1f);
+    static bool darkHintShown;
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    static void ResetHint() => darkHintShown = false;
+
     bool awake;
     bool isSplitChild;
     MonsterHealthBar bar;
@@ -106,7 +114,7 @@ public class Monster : Interactable
         if (mover != null) mover.PlayLunge(transform.position, delay);
 
         float impact = delay + LungeImpact;   // 내지른 공격이 닿는 순간
-        if (Random.value < evasion)
+        if (Random.value < Evasion)
         {
             GameLog.Add($"{displayName}{Josa("이", "가")} 공격을 피했다.", GameLog.Info);
             DamagePopup.Spawn(DamagePopup.Above(this), "빗나감", DamagePopup.Miss, 0.9f, impact);
@@ -188,6 +196,11 @@ public class Monster : Interactable
         {
             awake = true;
             GameLog.Add($"{displayName}{Josa("이", "가")} 이쪽을 노려본다!", GameLog.Warn);
+            if (!InLight && !darkHintShown)
+            {
+                darkHintShown = true;
+                GameLog.Add("어둠 속의 적은 더 사납다. 빛 안에서 싸워야 한다…", GameLog.Info);
+            }
         }
         if (!awake) return;
 
@@ -199,7 +212,7 @@ public class Monster : Interactable
 
     void HitPlayer(PlayerStats player, float delay)
     {
-        int dmg = Random.Range(AtkMin, AtkMax + 1);
+        int dmg = Mathf.Max(1, Mathf.RoundToInt(Random.Range(AtkMin, AtkMax + 1) * (InLight ? LitDamage : DarkDamage)));
         float impact = delay + LungeImpact;
         GameLog.Add($"{displayName}의 공격! {dmg}의 피해.", GameLog.Bad);
         DamagePopup.Spawn(DamagePopup.Above(player), $"-{dmg}", DamagePopup.Hurt, dmg >= AtkMax && AtkMax > AtkMin ? 1.4f : 1.15f, impact);

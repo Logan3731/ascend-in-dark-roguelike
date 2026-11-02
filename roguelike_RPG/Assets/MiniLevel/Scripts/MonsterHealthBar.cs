@@ -11,6 +11,7 @@ public class MonsterHealthBar : MonoBehaviour
     RectTransform fill;
     Text label;
     float headHeight;
+    bool lastLit, litKnown;
 
     public static MonsterHealthBar Create(Monster m)
     {
@@ -56,6 +57,8 @@ public class MonsterHealthBar : MonoBehaviour
         fill.anchorMin = Vector2.zero; fill.anchorMax = Vector2.one;
         fill.offsetMin = new Vector2(2, 2); fill.offsetMax = new Vector2(-2, -2);
 
+        UIKit.DrawOnTop(gameObject);   // 벽 뒤에 있어도 이름·체력이 보이게
+
         // 모델 꼭대기 높이
         var b = new Bounds(target.transform.position, Vector3.zero);
         foreach (var r in target.GetComponentsInChildren<Renderer>()) b.Encapsulate(r.bounds);
@@ -67,12 +70,16 @@ public class MonsterHealthBar : MonoBehaviour
         if (target == null) return;
         float t = target.MaxHp > 0 ? (float)target.Hp / target.MaxHp : 0f;
         fill.anchorMax = new Vector2(t, 1f);
-        label.text = $"{target.Label}  {target.Hp}/{target.MaxHp}";
+        // 빛 안이면 이름 흰색(약해짐), 어둠 속이면 빨간색(사나워짐)
+        lastLit = target.InLight; litKnown = true;
+        string nameColor = lastLit ? "#f2eee6" : "#ff4a3d";
+        label.text = $"<color={nameColor}>{target.Label}</color>  {target.Hp}/{target.MaxHp}";
     }
 
     void LateUpdate()
     {
         if (target == null) { Destroy(gameObject); return; }
+        if (!litKnown || target.InLight != lastLit) Refresh();
         transform.position = target.transform.position + Vector3.up * headHeight;
         var cam = Camera.main;
         if (cam != null) transform.rotation = cam.transform.rotation;   // 항상 카메라를 향한다

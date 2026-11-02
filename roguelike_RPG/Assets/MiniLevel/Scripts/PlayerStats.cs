@@ -2,7 +2,7 @@ using System;
 using UnityEngine;
 
 // 주인공의 HP·MP·허기·횃불 내구도와 소지품, 선/악. 한 턴이 끝날 때마다 허기와 (들고 있는) 횃불이 줄어든다.
-public class PlayerStats : MonoBehaviour
+public class PlayerStats : MonoBehaviour, LightSources.ISource
 {
     [Header("HP / MP")]
     public int maxHp = 100;
@@ -108,8 +108,14 @@ public class PlayerStats : MonoBehaviour
         return null;
     }
 
-    void OnEnable() { TurnManager.OnTurnEnded += HandleTurn; }
-    void OnDisable() { TurnManager.OnTurnEnded -= HandleTurn; }
+    void OnEnable() { TurnManager.OnTurnEnded += HandleTurn; LightSources.Register(this); }
+    void OnDisable() { TurnManager.OnTurnEnded -= HandleTurn; LightSources.Unregister(this); }
+
+    // 빛 판정: 횃불을 들고 있으면 주변 몇 칸이 빛 안이 된다 (빛 안의 적은 약해진다)
+    public float torchLightCells = 3f;
+    bool LightSources.ISource.IsOn => TorchLit;
+    Vector2Int LightSources.ISource.Cell => GridTile.WorldToCell(transform.position);
+    float LightSources.ISource.RadiusCells => torchLightCells;
 
     void Start()
     {
