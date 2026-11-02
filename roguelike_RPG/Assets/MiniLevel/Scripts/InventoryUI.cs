@@ -85,7 +85,7 @@ public class InventoryUI : MonoBehaviour
             if (held != null && returning == null) heldIcon.rectTransform.anchoredPosition = mouse;
             if (tooltip.gameObject.activeSelf) PlaceNearMouse(tooltip, mouse);
         }
-        else if ((kb.iKey.wasPressedThisFrame || kb.tabKey.wasPressedThisFrame) && !DialogUI.IsOpen && !PauseMenu.IsOpen && !TitleScreen.IsOpen && !player.Dead) Open();
+        else if ((kb.iKey.wasPressedThisFrame || kb.tabKey.wasPressedThisFrame) && !DialogUI.IsOpen && !PauseMenu.IsOpen && !TitleScreen.IsOpen && !Minimap.FullOpen && !player.Dead) Open();
     }
 
     public void Open()
