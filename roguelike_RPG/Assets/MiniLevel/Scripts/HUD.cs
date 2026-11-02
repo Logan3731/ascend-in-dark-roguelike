@@ -1,22 +1,32 @@
 using UnityEngine;
 using UnityEngine.UI;
 
-// 화면 HUD: 좌상단 HP·MP·허기·횃불 바, 우상단 턴 수, 좌하단 진행 로그. UI는 실행 시 코드로 만든다.
+// 화면 HUD (실행 시 코드로 만든다)
+// - 좌상단 판: 몇 번째 깨어남 + 상태(중독·횃불), 아이콘이 붙은 HP·MP·허기·횃불 바, 식량·골드
+//   바가 줄면 줄어든 만큼 잔상이 잠깐 남았다가 따라 내려간다. 위험하면(체력·허기·횃불 부족) 바가 깜빡인다.
+// - 우상단: 턴 수, 우하단: 조작 안내, 좌하단: 진행 로그(뒤에 어두운 배경)
 public class HUD : MonoBehaviour
 {
     public PlayerStats stats;
     public float logFadeAfter = 6f;
 
-    Font font;
-    RectTransform hpFill, mpFill, hungerFill, torchFill;
-    Text hpText, mpText, hungerText, torchText, turnText, nameText, invText;
+    class Bar
+    {
+        public RectTransform fill, ghost;
+        public Image fillImage, icon;
+        public Text value;
+        public Color color;
+        public float shown = 1f, ghostShown = 1f, ghostHoldUntil;
+        public bool warn;
+    }
+
+    Bar hp, mp, hunger, torch;
+    Text headerText, turnText, foodText, goldText;
+    GameObject poisonChip, torchChip;
+    Text poisonChipText;
     Text[] logLines;
 
-    void Awake()
-    {
-        font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        BuildCanvas();
-    }
+    void Awake() => Build();
 
     void OnEnable()
     {
@@ -41,32 +51,64 @@ public class HUD : MonoBehaviour
 
     void Update()
     {
-        // 오래된 로그는 서서히 흐려진다
+        foreach (var b in new[] { hp, mp, hunger, torch }) Animate(b);
+
+        // 로그: 오래된 줄은 서서히 흐려지고, 최신 줄일수록 진하다
         var lines = GameLog.Lines;
         int offset = logLines.Length - lines.Count;
         for (int i = 0; i < lines.Count; i++)
         {
             float age = Time.time - lines[i].time;
             var c = lines[i].color;
-            c.a = Mathf.Clamp01(1f - (age - logFadeAfter) / 2f);
+            float recency = i == lines.Count - 1 ? 1f : 0.8f;
+            c.a = Mathf.Clamp01(1f - (age - logFadeAfter) / 2f) * recency;
             logLines[offset + i].color = c;
         }
+    }
+
+    // 잔상 바가 늦게 따라오고, 위험하면 깜빡인다
+    void Animate(Bar b)
+    {
+        if (Time.time > b.ghostHoldUntil) b.ghostShown = Mathf.MoveTowards(b.ghostShown, b.shown, Time.deltaTime * 0.8f);
+        b.ghost.anchorMax = new Vector2(Mathf.Max(b.ghostShown, b.shown), 1f);
+
+        float pulse = b.warn ? 0.5f + 0.5f * Mathf.Sin(Time.time * 7f) : 0f;
+        b.fillImage.color = Color.Lerp(b.color, new Color(1f, 0.25f, 0.2f), pulse * 0.6f);
+        b.icon.rectTransform.localScale = Vector3.one * (1f + 0.12f * pulse);
     }
 
     void RefreshBars()
     {
         if (stats == null) return;
-        string who = string.IsNullOrEmpty(stats.PlayerName) ? $"{TowerMemory.RunCount}번째 깨어남" : stats.PlayerName;
-        nameText.text = stats.PoisonTurns > 0 ? $"{who}   <color=#8fd14f>중독 {stats.PoisonTurns}</color>" : who;
-        string torch = !stats.HasTorch ? "없음" : stats.TorchHeld ? "듦" : "안 듦";
-        invText.text = $"공격 {stats.AttackMin}~{stats.AttackMax}    힘 {stats.Strength}    경험 {stats.Exp}    식량 {stats.Food}    골드 {stats.Gold}    횃불 {torch}";
-        SetBar(hpFill, hpText, stats.Hp, stats.maxHp);
-        SetBar(mpFill, mpText, stats.Mp, stats.maxMp);
-        SetBar(hungerFill, hungerText, stats.Hunger, stats.maxHunger);
-        SetBar(torchFill, torchText, stats.Torch, stats.maxTorch);
+        var s = stats;
+        headerText.text = string.IsNullOrEmpty(s.PlayerName) ? $"{TowerMemory.RunCount}번째 깨어남" : s.PlayerName;
+
+        poisonChip.SetActive(s.PoisonTurns > 0);
+        poisonChipText.text = $"중독 {s.PoisonTurns}";
+        torchChip.SetActive(s.TorchLit);
+
+        SetBar(hp, s.Hp, s.maxHp, s.Hp < s.maxHp * 0.3f);
+        SetBar(mp, s.Mp, s.maxMp, false);
+        SetBar(hunger, s.Hunger, s.maxHunger, s.Hunger <= s.hungryWarnAt);
+        SetBar(torch, s.Torch, s.maxTorch, s.TorchLit && s.Torch <= s.torchWarnAt);
+        if (!s.HasTorch) torch.value.text = "없음";
+
+        foodText.text = $"× {s.Food}";
+        goldText.text = $"골드 {s.Gold}";
     }
 
-    void RefreshTurn(int turn) => turnText.text = $"턴 {turn}";
+    static void SetBar(Bar b, int value, int max, bool warn)
+    {
+        float t = max > 0 ? Mathf.Clamp01((float)value / max) : 0f;
+        if (t < b.shown) b.ghostHoldUntil = Time.time + 0.45f;   // 줄어든 만큼 잠깐 남겨 둔다
+        else b.ghostShown = t;                                    // 늘어나면 잔상 없이 바로
+        b.shown = t;
+        b.fill.anchorMax = new Vector2(t, 1f);
+        b.value.text = $"{value} / {max}";
+        b.warn = warn;
+    }
+
+    void RefreshTurn(int turn) => turnText.text = $"턴  {turn}";
 
     void RefreshLog()
     {
@@ -80,116 +122,131 @@ public class HUD : MonoBehaviour
         }
     }
 
-    static void SetBar(RectTransform fill, Text label, int value, int max)
-    {
-        float t = max > 0 ? (float)value / max : 0f;
-        fill.anchorMax = new Vector2(t, 1f);
-        label.text = $"{value}/{max}";
-    }
-
     // ---- UI 생성 ----
 
-    void BuildCanvas()
+    void Build()
     {
-        var canvasGo = new GameObject("HUDCanvas", typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
-        canvasGo.transform.SetParent(transform, false);
-        var canvas = canvasGo.GetComponent<Canvas>();
-        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-        var scaler = canvasGo.GetComponent<CanvasScaler>();
-        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-        scaler.referenceResolution = new Vector2(1920, 1080);
-        scaler.matchWidthOrHeight = 0.5f;
-        var root = canvasGo.GetComponent<RectTransform>();
+        var root = UIKit.Canvas(transform, "HUDCanvas", 0);
+        var topLeft = new Vector2(0, 1);
 
-        nameText = MakeText(root, "Name", 28, TextAnchor.MiddleLeft);
-        var nr = nameText.rectTransform;
-        nr.anchorMin = nr.anchorMax = nr.pivot = new Vector2(0, 1);
-        nr.anchoredPosition = new Vector2(40, -24);
-        nr.sizeDelta = new Vector2(400, 36);
+        // 좌상단 판
+        var panel = UIKit.Image(root, "StatusPanel", new Color(0.03f, 0.025f, 0.02f, 0.62f));
+        UIKit.Place(panel.rectTransform, topLeft, new Vector2(20, -18), new Vector2(470, 262));
+        var pol = panel.gameObject.AddComponent<Outline>();
+        pol.effectColor = new Color(0.55f, 0.45f, 0.3f, 0.45f);
 
-        float y = -66f;
-        hpFill = MakeBar(root, "HP", new Color(0.75f, 0.2f, 0.17f), ref y, out hpText);
-        mpFill = MakeBar(root, "MP", new Color(0.25f, 0.42f, 0.72f), ref y, out mpText);
-        hungerFill = MakeBar(root, "허기", new Color(0.55f, 0.62f, 0.25f), ref y, out hungerText);
-        torchFill = MakeBar(root, "횃불", new Color(0.94f, 0.54f, 0.17f), ref y, out torchText);
+        headerText = Shadowed(UIKit.Text(root, "", 24, TextAnchor.MiddleLeft, UIKit.Gold));
+        UIKit.Place(headerText.rectTransform, topLeft, new Vector2(40, -30), new Vector2(220, 32));
+        poisonChip = Chip(root, new Vector2(270, -33), new Color(0.25f, 0.4f, 0.1f, 0.9f), new Color(0.75f, 0.95f, 0.45f), out poisonChipText);
+        torchChip = Chip(root, new Vector2(372, -33), new Color(0.45f, 0.24f, 0.06f, 0.9f), new Color(1f, 0.75f, 0.4f), out var torchChipText);
+        torchChipText.text = "횃불 듦";
 
-        invText = MakeText(root, "Inventory", 20, TextAnchor.MiddleLeft);
-        var ir = invText.rectTransform;
-        ir.anchorMin = ir.anchorMax = ir.pivot = new Vector2(0, 1);
-        ir.anchoredPosition = new Vector2(40, y - 4);
-        ir.sizeDelta = new Vector2(600, 28);
+        float y = -72f;
+        hp = MakeBar(root, "hp", "HP", new Color(0.78f, 0.2f, 0.17f), ref y);
+        mp = MakeBar(root, "mp", "MP", new Color(0.26f, 0.45f, 0.78f), ref y);
+        hunger = MakeBar(root, "food", "허기", new Color(0.62f, 0.66f, 0.27f), ref y);
+        torch = MakeBar(root, "torch", "횃불", new Color(0.94f, 0.56f, 0.18f), ref y);
 
-        var keys = MakeText(root, "Keys", 18, TextAnchor.MiddleLeft);
-        keys.text = "[I] 소지품    [F] 횃불 들기/내리기    [E] 식량 먹기";
-        keys.color = new Color(1, 1, 1, 0.5f);
-        var kr = keys.rectTransform;
-        kr.anchorMin = kr.anchorMax = kr.pivot = new Vector2(0, 1);
-        kr.anchoredPosition = new Vector2(40, y - 34);
-        kr.sizeDelta = new Vector2(600, 26);
+        // 식량·골드
+        var foodIcon = UIKit.Image(root, "FoodIcon", Color.white);
+        foodIcon.sprite = Resources.Load<Sprite>("Icons/food");
+        foodIcon.preserveAspect = true;
+        UIKit.Place(foodIcon.rectTransform, topLeft, new Vector2(42, y - 2), new Vector2(26, 26));
+        foodText = Shadowed(UIKit.Text(root, "", 20, TextAnchor.MiddleLeft, GameLog.Info));
+        UIKit.Place(foodText.rectTransform, topLeft, new Vector2(74, y), new Vector2(80, 30));
+        goldText = Shadowed(UIKit.Text(root, "", 20, TextAnchor.MiddleLeft, UIKit.Gold));
+        UIKit.Place(goldText.rectTransform, topLeft, new Vector2(160, y), new Vector2(160, 30));
 
-        turnText = MakeText(root, "Turn", 30, TextAnchor.UpperRight);
-        var tr = turnText.rectTransform;
-        tr.anchorMin = tr.anchorMax = tr.pivot = new Vector2(1, 1);
-        tr.anchoredPosition = new Vector2(-40, -28);
-        tr.sizeDelta = new Vector2(300, 44);
+        // 우상단 턴
+        var turnBg = UIKit.Image(root, "TurnPanel", new Color(0.03f, 0.025f, 0.02f, 0.62f));
+        UIKit.Place(turnBg.rectTransform, new Vector2(1, 1), new Vector2(-20, -18), new Vector2(150, 50));
+        turnBg.gameObject.AddComponent<Outline>().effectColor = new Color(0.55f, 0.45f, 0.3f, 0.45f);
+        turnText = Shadowed(UIKit.Text(turnBg.rectTransform, "", 26, TextAnchor.MiddleCenter, GameLog.Info));
+        UIKit.Stretch(turnText.rectTransform);
 
+        // 우하단 조작 안내
+        var keys = Shadowed(UIKit.Text(root, "[I] 소지품    [F] 횃불    [E] 먹기    [Esc] 메뉴", 18, TextAnchor.LowerRight, new Color(1, 1, 1, 0.45f)));
+        UIKit.Place(keys.rectTransform, new Vector2(1, 0), new Vector2(-28, 22), new Vector2(600, 26));
+
+        // 좌하단 로그 (왼쪽이 진하고 오른쪽으로 사라지는 배경)
+        const int lineH = 34;
+        var logBg = UIKit.Image(root, "LogBg", Color.white);
+        logBg.sprite = FadeRight();
+        UIKit.Place(logBg.rectTransform, new Vector2(0, 0), new Vector2(0, 14), new Vector2(900, GameLog.MaxLines * lineH + 24));
         logLines = new Text[GameLog.MaxLines];
         for (int i = 0; i < logLines.Length; i++)
         {
-            var t = MakeText(root, "Log" + i, 28, TextAnchor.LowerLeft);
-            var r = t.rectTransform;
-            r.anchorMin = r.anchorMax = r.pivot = new Vector2(0, 0);
-            r.anchoredPosition = new Vector2(40, 40 + (logLines.Length - 1 - i) * 38);
-            r.sizeDelta = new Vector2(900, 38);
+            var t = Shadowed(UIKit.Text(root, "", 24, TextAnchor.LowerLeft, GameLog.Info));
+            UIKit.Place(t.rectTransform, new Vector2(0, 0), new Vector2(36, 26 + (logLines.Length - 1 - i) * lineH), new Vector2(860, lineH));
             logLines[i] = t;
         }
     }
 
-    RectTransform MakeBar(RectTransform root, string label, Color color, ref float y, out Text valueText)
+    Bar MakeBar(RectTransform root, string iconId, string label, Color color, ref float y)
     {
-        var name = MakeText(root, label + "Label", 22, TextAnchor.MiddleLeft);
-        name.text = label;
-        var nr = name.rectTransform;
-        nr.anchorMin = nr.anchorMax = nr.pivot = new Vector2(0, 1);
-        nr.anchoredPosition = new Vector2(40, y);
-        nr.sizeDelta = new Vector2(70, 26);
+        var topLeft = new Vector2(0, 1);
+        var b = new Bar { color = color };
 
-        var bg = new GameObject(label + "Bar", typeof(Image)).GetComponent<Image>();
-        bg.transform.SetParent(root, false);
-        bg.color = new Color(0, 0, 0, 0.55f);
-        var br = bg.rectTransform;
-        br.anchorMin = br.anchorMax = br.pivot = new Vector2(0, 1);
-        br.anchoredPosition = new Vector2(112, y - 5);
-        br.sizeDelta = new Vector2(340, 16);
+        b.icon = UIKit.Image(root, iconId + "Icon", Color.white);
+        b.icon.sprite = Resources.Load<Sprite>("Icons/" + iconId);
+        b.icon.preserveAspect = true;
+        UIKit.Place(b.icon.rectTransform, topLeft, new Vector2(38, y + 3), new Vector2(36, 36));
+        // 크기 깜빡임이 가운데를 기준으로 되도록
+        b.icon.rectTransform.pivot = new Vector2(0.5f, 0.5f);
+        b.icon.rectTransform.anchoredPosition += new Vector2(18, -18);
 
-        var fill = new GameObject("Fill", typeof(Image)).GetComponent<Image>();
-        fill.transform.SetParent(bg.transform, false);
-        fill.color = color;
-        var fr = fill.rectTransform;
-        fr.anchorMin = Vector2.zero; fr.anchorMax = Vector2.one;
-        fr.offsetMin = fr.offsetMax = Vector2.zero;
+        var bg = UIKit.Image(root, label + "Bar", new Color(0, 0, 0, 0.6f));
+        UIKit.Place(bg.rectTransform, topLeft, new Vector2(84, y - 4), new Vector2(380, 26));
+        bg.gameObject.AddComponent<Outline>().effectColor = new Color(0.5f, 0.42f, 0.3f, 0.5f);
 
-        valueText = MakeText(root, label + "Value", 18, TextAnchor.MiddleLeft);
-        var vr = valueText.rectTransform;
-        vr.anchorMin = vr.anchorMax = vr.pivot = new Vector2(0, 1);
-        vr.anchoredPosition = new Vector2(462, y);
-        vr.sizeDelta = new Vector2(120, 26);
+        var ghost = UIKit.Image(bg.rectTransform, "Ghost", new Color(0.95f, 0.78f, 0.55f, 0.45f));
+        b.ghost = ghost.rectTransform;
+        b.ghost.anchorMin = Vector2.zero; b.ghost.anchorMax = Vector2.one;
+        b.ghost.offsetMin = new Vector2(2, 2); b.ghost.offsetMax = new Vector2(-2, -2);
 
-        y -= 32f;
-        return fr;
+        b.fillImage = UIKit.Image(bg.rectTransform, "Fill", color);
+        b.fill = b.fillImage.rectTransform;
+        b.fill.anchorMin = Vector2.zero; b.fill.anchorMax = Vector2.one;
+        b.fill.offsetMin = new Vector2(2, 2); b.fill.offsetMax = new Vector2(-2, -2);
+
+        var name = Shadowed(UIKit.Text(bg.rectTransform, label, 16, TextAnchor.MiddleLeft, new Color(1, 1, 1, 0.85f)));
+        UIKit.Stretch(name.rectTransform);
+        name.rectTransform.offsetMin = new Vector2(10, 0);
+
+        b.value = Shadowed(UIKit.Text(bg.rectTransform, "", 17, TextAnchor.MiddleRight, Color.white));
+        UIKit.Stretch(b.value.rectTransform);
+        b.value.rectTransform.offsetMax = new Vector2(-10, 0);
+
+        y -= 42f;
+        return b;
     }
 
-    Text MakeText(RectTransform root, string name, int size, TextAnchor anchor)
+    // 작은 상태 표시 (중독, 횃불)
+    GameObject Chip(RectTransform root, Vector2 pos, Color bgColor, Color textColor, out Text label)
     {
-        var t = new GameObject(name, typeof(Text), typeof(Shadow)).GetComponent<Text>();
-        t.transform.SetParent(root, false);
-        t.font = font;
-        t.fontSize = size;
-        t.alignment = anchor;
-        t.color = GameLog.Info;
-        t.horizontalOverflow = HorizontalWrapMode.Overflow;
-        t.raycastTarget = false;
-        t.GetComponent<Shadow>().effectColor = new Color(0, 0, 0, 0.9f);
+        var bg = UIKit.Image(root, "Chip", bgColor);
+        UIKit.Place(bg.rectTransform, new Vector2(0, 1), pos, new Vector2(94, 26));
+        label = UIKit.Text(bg.rectTransform, "", 16, TextAnchor.MiddleCenter, textColor);
+        UIKit.Stretch(label.rectTransform);
+        bg.gameObject.SetActive(false);
+        return bg.gameObject;
+    }
+
+    static Text Shadowed(Text t)
+    {
+        var sh = t.gameObject.AddComponent<Shadow>();
+        sh.effectColor = new Color(0, 0, 0, 0.9f);
         return t;
+    }
+
+    // 왼쪽이 어둡고 오른쪽으로 갈수록 투명해지는 배경
+    static Sprite FadeRight()
+    {
+        const int w = 256;
+        var tex = new Texture2D(w, 1, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp };
+        for (int x = 0; x < w; x++)
+            tex.SetPixel(x, 0, new Color(0, 0, 0, 0.55f * (1f - Mathf.SmoothStep(0.3f, 1f, x / (float)(w - 1)))));
+        tex.Apply();
+        return Sprite.Create(tex, new Rect(0, 0, w, 1), new Vector2(0.5f, 0.5f));
     }
 }
