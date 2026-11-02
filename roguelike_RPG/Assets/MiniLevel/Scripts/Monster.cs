@@ -244,10 +244,7 @@ public class Monster : Interactable
 
     static HashSet<Vector2Int> FreeCells(Vector2Int playerCell)
     {
-        var free = new HashSet<Vector2Int>();
-        foreach (var t in FindObjectsByType<GridTile>(FindObjectsSortMode.None)) free.Add(t.Cell);
-        foreach (var b in FindObjectsByType<GridBlocker>(FindObjectsSortMode.None))
-            if (b.enabled) free.Remove(b.Cell);
+        var free = GridNav.Walkable(GridNav.Floors());
         free.Remove(playerCell);
         return free;
     }

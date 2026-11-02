@@ -24,6 +24,7 @@ public class Minimap : MonoBehaviour
     static readonly Color WallColor = new Color(0.17f, 0.15f, 0.13f);
 
     MapData map;
+    Transform door;
     Texture2D tex;
     MapView preview, full;
     GameObject fullRoot;
@@ -45,6 +46,8 @@ public class Minimap : MonoBehaviour
     void Start()
     {
         map = new MapData();
+        var doorGo = GameObject.Find("P_GiantDoor");
+        door = doorGo != null ? doorGo.transform : null;
         tex = new Texture2D(map.bounds.width * Px, map.bounds.height * Px, TextureFormat.RGBA32, false)
         {
             filterMode = FilterMode.Point,
@@ -129,11 +132,8 @@ public class Minimap : MonoBehaviour
         {
             if (map.IsExplored(c)) icons.Add(new Icon { cell = c, glyph = g, color = col, size = size });
         }
-        foreach (var t in FindObjectsByType<Transform>(FindObjectsSortMode.None))
-        {
-            if (t.name.StartsWith("P_Stairs")) Add(GridTile.WorldToCell(t.position), "▲", new Color(0.55f, 0.78f, 1f), 1.2f);
-            else if (t.name.StartsWith("P_GiantDoor")) Add(GridTile.WorldToCell(t.position), "▬", new Color(0.86f, 0.72f, 0.42f), 1.2f);
-        }
+        foreach (var s in FindObjectsByType<StairsEvent>(FindObjectsSortMode.None)) Add(s.Cell, "▲", new Color(0.55f, 0.78f, 1f), 1.2f);
+        if (door != null) Add(GridTile.WorldToCell(door.position), "▬", new Color(0.86f, 0.72f, 0.42f), 1.2f);
         foreach (var c in FindObjectsByType<ChestEvent>(FindObjectsSortMode.None)) if (!c.Used) Add(c.Cell, "■", new Color(0.95f, 0.78f, 0.3f));
         foreach (var w in FindObjectsByType<WallTorch>(FindObjectsSortMode.None)) Add(w.Cell, "●", w.IsOn ? new Color(1f, 0.62f, 0.2f) : new Color(0.45f, 0.36f, 0.28f), 0.8f);
         foreach (var b in FindObjectsByType<BonesEvent>(FindObjectsSortMode.None)) if (!b.Used) Add(b.Cell, "×", new Color(0.92f, 0.9f, 0.82f), 1.2f);

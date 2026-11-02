@@ -31,10 +31,9 @@ public class CameraFollowOcclusion : MonoBehaviour
     void LateUpdate()
     {
         if (target == null) return;
-        if (!started) { followPos = transform.position; started = true; }
-
         var focus = target.position + Vector3.up * 1f;
         var wanted = focus - transform.forward * distance;
+        if (!started) { followPos = wanted; started = true; }   // 첫 프레임엔 바로 플레이어 위로 (시작 위치가 매번 달라서)
         followPos = Vector3.Lerp(followPos, wanted, 1f - Mathf.Exp(-followSpeed * Time.deltaTime));
 
         var offset = Vector3.zero;

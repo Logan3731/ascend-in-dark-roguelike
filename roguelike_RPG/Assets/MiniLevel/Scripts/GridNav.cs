@@ -12,10 +12,24 @@ public static class GridNav
         new Vector2Int(1, 1), new Vector2Int(1, -1), new Vector2Int(-1, 1), new Vector2Int(-1, -1),
     };
 
+    // 바닥은 플레이 중에 바뀌지 않으니 한 번 모아 두고 같이 쓴다 (새 맵을 만들면 Invalidate). 받은 쪽에서 고치지 말 것.
+    static HashSet<Vector2Int> cachedFloors;
+
+    public static void Invalidate() => cachedFloors = null;
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    static void ResetOnPlay()
+    {
+        cachedFloors = null;
+        UnityEngine.SceneManagement.SceneManager.sceneLoaded += (s, m) => cachedFloors = null;
+    }
+
     public static HashSet<Vector2Int> Floors()
     {
+        if (cachedFloors != null && Application.isPlaying) return cachedFloors;
         var floors = new HashSet<Vector2Int>();
         foreach (var t in Object.FindObjectsByType<GridTile>(FindObjectsSortMode.None)) floors.Add(t.Cell);
+        if (Application.isPlaying) cachedFloors = floors;
         return floors;
     }
 

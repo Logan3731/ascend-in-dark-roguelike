@@ -35,6 +35,7 @@ public class IntroSequence : MonoBehaviour
         foreach (var b in TowerMemory.AllBones)
         {
             var cell = new Vector2Int(b.x, b.y);
+            if (FloorGenerator.Instance != null) cell = FloorGenerator.Instance.PlaceBones(cell, b.run);   // 미로가 매번 바뀌므로 자리를 맞춘다
             var go = Instantiate(bonesPrefab, GridTile.CellToWorld(cell), Quaternion.Euler(0, Random.Range(0, 360f), 0));
             go.name = $"Bones_{b.run}";
             go.GetComponent<BonesEvent>().record = b;
