@@ -32,11 +32,12 @@ public class FloorGenerator : MonoBehaviour
     public GameObject wallTorchPrefab;
     public GameObject chestSmall, chestBig, chestElite;
     public GameObject rat, bat, slime, wolf;
-    public GameObject anvilPrefab, branchPrefab, stonePrefab;
+    public GameObject anvilPrefab, branchPrefab, stonePrefab, potPrefab;
 
     [Header("배치 수")]
     public int wallTorches = 12;
     public int branches = 14, stones = 10;
+    public int pots = 16;
 
     [Header("씬에 있는 것 (위치만 옮긴다)")]
     public Transform player;
@@ -440,6 +441,9 @@ public class FloorGenerator : MonoBehaviour
         ScatterPickups("branch", branchPrefab, branches + R(-2, 3));
         ScatterPickups("stone", stonePrefab, stones + R(-2, 3));
 
+        // 항아리: 방 가장자리에 (깨 보면 무언가 나올지도)
+        ScatterPots(pots + R(-3, 4));
+
         root.gameObject.SetActive(true);
     }
 
@@ -643,6 +647,32 @@ public class FloorGenerator : MonoBehaviour
             var p = go.GetComponent<Pickup>() ?? go.AddComponent<Pickup>();
             p.itemId = id;
             p.triggerOnEnter = true;
+        }
+    }
+
+    void ScatterPots(int count)
+    {
+        var open = rooms.FindAll(r => !r.locked);
+        for (int i = 0; i < count && open.Count > 0; i++)
+        {
+            var r = Pick(open);
+            var cell = FreeCellIn(r.rect, true);
+            if (cell == null) { open.Remove(r); continue; }
+            occupied.Add(cell.Value);
+            GameObject go;
+            if (potPrefab != null) go = Instantiate(potPrefab, GridTile.CellToWorld(cell.Value), Quaternion.Euler(0, R(0, 360), 0), root);
+            else
+            {
+                go = new GameObject("Pot");
+                go.transform.SetParent(root, false);
+                go.transform.position = GridTile.CellToWorld(cell.Value);
+                var body = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                body.transform.SetParent(go.transform, false);
+                body.transform.localPosition = new Vector3(0, 0.7f, 0);
+                body.transform.localScale = new Vector3(1.2f, 1.4f, 1.2f);
+                body.GetComponent<Renderer>().material.color = new Color(0.55f, 0.36f, 0.22f);
+            }
+            if (go.GetComponent<Pot>() == null) go.AddComponent<Pot>();
         }
     }
 

@@ -101,7 +101,7 @@ public class PauseMenu : MonoBehaviour
             UIKit.Place((RectTransform)b.transform, new Vector2(0.5f, 1), new Vector2(0, -120 - i * 84), new Vector2(320, 62));
         }
 
-        controls = Panel("Controls", new Vector2(640, 590));
+        controls = Panel("Controls", new Vector2(640, 630));
         var cr = (RectTransform)controls.transform;
         var ct = UIKit.Text(cr, "조작법", 36, TextAnchor.UpperCenter, UIKit.Gold);
         UIKit.Place(ct.rectTransform, new Vector2(0.5f, 1), new Vector2(0, -30), new Vector2(560, 50));
@@ -112,6 +112,7 @@ public class PauseMenu : MonoBehaviour
             ("", "몬스터: 다가가서 공격"),
             ("", "상자·도구·뼈: 다가가서 살펴보기"),
             ("I / Tab", "소지품·상태창"),
+            ("Q", "강타 준비 (다음 공격 두 배, 기력 소모)"),
             ("F", "횃불 들기 / 내리기"),
             ("T", "든 횃불 던지기 (떨어진 곳이 빛 구역)"),
             ("E", "식량 먹기"),

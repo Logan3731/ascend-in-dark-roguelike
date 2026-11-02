@@ -123,9 +123,82 @@ public class PlayerStats : MonoBehaviour, LightSources.ISource
         OnChanged?.Invoke();
     }
 
+    // ---- 기력·강타 / 걸으며 회복 / 이번 생의 레벨 (Darkness Survival의 순환에서 따옴) ----
+
+    [Header("기력·강타")]
+    public int strikeCost = 10;      // [Q] 강타: 다음 공격 두 배 + 피할 수 없음
+    public int stepsPerRegen = 8;    // 이만큼 걸을 때마다 HP +1 (공격받지 않은 걸음, 굶주리면 안 됨)
+    public bool StrikeReady { get; private set; }
+    public int Level { get; private set; } = 1;
+    public int NextLevelExp => (3 * Level * Level + 9 * Level) / 2;   // 6, 15, 27, 42, 60 …
+    int steps;
+
+    public void ToggleStrike()
+    {
+        if (Dead) return;
+        if (StrikeReady) { StrikeReady = false; GameLog.Add("모은 힘을 풀었다.", GameLog.Info); }
+        else if (Mp >= strikeCost) { StrikeReady = true; GameLog.Add($"힘을 모은다 — 다음 공격은 강타! (두 배, 피할 수 없음, 기력 {strikeCost})", GameLog.Warn); }
+        else GameLog.Add($"기력이 모자라다. (강타에 {strikeCost} 필요)", GameLog.Info);
+        OnChanged?.Invoke();
+    }
+
+    // 공격할 때 부른다: 강타가 준비돼 있으면 기력을 쓰고 true
+    public bool ConsumeStrike()
+    {
+        if (!StrikeReady || Mp < strikeCost) { StrikeReady = false; return false; }
+        StrikeReady = false;
+        Mp -= strikeCost;
+        OnChanged?.Invoke();
+        return true;
+    }
+
+    // 공격받지 않고 한 칸 걸었을 때
+    public void OnStepped()
+    {
+        if (Dead || Hunger == 0 || Hp >= maxHp) return;
+        if (++steps < stepsPerRegen) return;
+        steps = 0;
+        Hp++;
+        OnChanged?.Invoke();
+    }
+
+    void CheckLevelUp()
+    {
+        while (Exp >= NextLevelExp)
+        {
+            Level++;
+            Hp = Mathf.Min(maxHp, Hp + 10);
+            Mp = maxMp;
+            GameLog.Add($"레벨이 올랐다! (Lv.{Level}) 기력이 가득 찼다.", GameLog.Good);
+            DamagePopup.Spawn(DamagePopup.Above(this, 1.2f), "레벨 업!", DamagePopup.Big, 1.4f);
+            LevelUpChoice.Enqueue(this);
+        }
+    }
+
+    // 레벨 업 보상 (LevelUpChoice가 셋을 골라 보여 준다)
+    public void ApplyPerk(LevelUpChoice.Perk perk)
+    {
+        switch (perk)
+        {
+            case LevelUpChoice.Perk.Vitality: maxHp += 15; Hp += 15; break;
+            case LevelUpChoice.Perk.Sharp: fistMin++; fistMax++; break;
+            case LevelUpChoice.Perk.Focus: maxMp += 10; Mp += 10; break;
+            case LevelUpChoice.Perk.Technique: strikeCost = Mathf.Max(4, strikeCost - 3); break;
+            case LevelUpChoice.Perk.Stomach: maxHunger += 25; Hunger += 25; break;
+            case LevelUpChoice.Perk.Recovery: stepsPerRegen = Mathf.Max(3, stepsPerRegen - 3); break;
+            case LevelUpChoice.Perk.Torchbearer:
+                if (HasTorch) Torch += 60; else GiveTorch();
+                break;
+        }
+        OnChanged?.Invoke();
+    }
+
     void HandleTurn(int turn)
     {
         if (Dead) return;
+
+        // 배가 고프지 않으면 기력이 한 턴에 1씩 찬다 (배고프면 멈춘다)
+        if (Hunger > hungryWarnAt && Mp < maxMp) Mp++;
 
         int before = Hunger;
         Hunger = Mathf.Max(0, Hunger - hungerPerTurn);
@@ -194,7 +267,7 @@ public class PlayerStats : MonoBehaviour, LightSources.ISource
     }
     public void AddGold(int amount) { Gold = Mathf.Max(0, Gold + amount); OnChanged?.Invoke(); }
     public void AddKarma(int amount) { TowerMemory.AddKarma(amount); Debug.Log($"[Karma] {Karma}"); }
-    public void AddExp(int amount) { Exp += amount; OnChanged?.Invoke(); }
+    public void AddExp(int amount) { Exp += amount; CheckLevelUp(); OnChanged?.Invoke(); }
 
     // 물약 등으로 체력·허기를 채운다 / 독을 뺀다
     public void Heal(int amount)

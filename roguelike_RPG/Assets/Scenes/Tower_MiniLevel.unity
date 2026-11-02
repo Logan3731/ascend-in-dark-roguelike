@@ -193,9 +193,11 @@ MonoBehaviour:
   anvilPrefab: {fileID: 7448252826696894095, guid: ac7ff8fe69cba2c419f68866a38534ac, type: 3}
   branchPrefab: {fileID: 397479955229502043, guid: 8709bce99f0ac3642b2867c54b6e1ad3, type: 3}
   stonePrefab: {fileID: 2875777180985103628, guid: 7f05c16c9f6155c40a1d9ddb7f16824f, type: 3}
+  potPrefab: {fileID: 7668175463249768556, guid: 4aa7d8cf32e19d84896fb2f9b339fca6, type: 3}
   wallTorches: 12
   branches: 14
   stones: 10
+  pots: 16
   player: {fileID: 1538796691}
   giantDoor: {fileID: 1785813250}
   tools: {fileID: 1811694408}

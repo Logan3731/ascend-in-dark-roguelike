@@ -81,14 +81,16 @@ public class HUD : MonoBehaviour
     {
         if (stats == null) return;
         var s = stats;
-        headerText.text = string.IsNullOrEmpty(s.PlayerName) ? $"{TowerMemory.RunCount}번째 깨어남" : s.PlayerName;
+        string who = string.IsNullOrEmpty(s.PlayerName) ? $"{TowerMemory.RunCount}번째" : s.PlayerName;
+        headerText.text = $"Lv.{s.Level}  <size=16><color=#9e9480>{who} · 경험 {s.Exp}/{s.NextLevelExp}</color></size>";
 
         poisonChip.SetActive(s.PoisonTurns > 0);
         poisonChipText.text = $"중독 {s.PoisonTurns}";
         torchChip.SetActive(s.TorchLit);
 
         SetBar(hp, s.Hp, s.maxHp, s.Hp < s.maxHp * 0.3f);
-        SetBar(mp, s.Mp, s.maxMp, false);
+        SetBar(mp, s.Mp, s.maxMp, s.StrikeReady);
+        if (s.StrikeReady) mp.value.text = "강타 준비!";
         SetBar(hunger, s.Hunger, s.maxHunger, s.Hunger <= s.hungryWarnAt);
         SetBar(torch, s.Torch, s.maxTorch, s.TorchLit && s.Torch <= s.torchWarnAt);
         if (!s.HasTorch) torch.value.text = "없음";
@@ -144,7 +146,7 @@ public class HUD : MonoBehaviour
 
         float y = -72f;
         hp = MakeBar(root, "hp", "HP", new Color(0.78f, 0.2f, 0.17f), ref y);
-        mp = MakeBar(root, "mp", "MP", new Color(0.26f, 0.45f, 0.78f), ref y);
+        mp = MakeBar(root, "mp", "기력", new Color(0.26f, 0.45f, 0.78f), ref y);
         hunger = MakeBar(root, "food", "허기", new Color(0.62f, 0.66f, 0.27f), ref y);
         torch = MakeBar(root, "torch", "횃불", new Color(0.94f, 0.56f, 0.18f), ref y);
 
@@ -166,7 +168,7 @@ public class HUD : MonoBehaviour
         UIKit.Stretch(turnText.rectTransform);
 
         // 우하단 조작 안내
-        var keys = Shadowed(UIKit.Text(root, "[I] 소지품    [F] 횃불    [T] 횃불 던지기    [E] 먹기    [Esc] 메뉴", 18, TextAnchor.LowerRight, new Color(1, 1, 1, 0.45f)));
+        var keys = Shadowed(UIKit.Text(root, "[I] 소지품    [Q] 강타    [F] 횃불    [T] 던지기    [E] 먹기    [Esc] 메뉴", 18, TextAnchor.LowerRight, new Color(1, 1, 1, 0.45f)));
         UIKit.Place(keys.rectTransform, new Vector2(1, 0), new Vector2(-28, 22), new Vector2(600, 26));
 
         // 좌하단 로그 (왼쪽이 진하고 오른쪽으로 사라지는 배경)

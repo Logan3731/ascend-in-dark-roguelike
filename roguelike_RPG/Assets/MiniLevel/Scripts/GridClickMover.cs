@@ -76,6 +76,7 @@ public class GridClickMover : MonoBehaviour
         {
             if (kb.fKey.wasPressedThisFrame) stats.ToggleTorch();
             if (kb.eKey.wasPressedThisFrame) stats.EatFood();
+            if (kb.qKey.wasPressedThisFrame) stats.ToggleStrike();
             if (kb.tKey.wasPressedThisFrame)
             {
                 if (stats.TorchLit) { ClearGoal(); Thrower.Begin(Items.Torch); }
@@ -322,6 +323,7 @@ public class GridClickMover : MonoBehaviour
         transform.position = to;
         transform.rotation = toRot;
         TurnResolver.ResolveAttacks(stats, null);   // 이동한 턴: 붙어 있던 몬스터만 공격
+        if (!TurnResolver.AttackedThisTurn) stats.OnStepped();   // 공격받지 않고 걸으면 천천히 회복
 
         // 밟으면 발동하는 칸
         foreach (var trig in FindObjectsByType<Interactable>(FindObjectsSortMode.None))

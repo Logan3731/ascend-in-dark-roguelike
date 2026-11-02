@@ -137,13 +137,23 @@ public class Monster : Interactable
         if (mover != null) mover.PlayLunge(transform.position, delay);
 
         float impact = delay + LungeImpact;   // 내지른 공격이 닿는 순간
-        if (Random.value < Evasion)
+        bool strike = player.ConsumeStrike();  // [Q] 강타: 피할 수 없고 두 배
+        if (!strike && Random.value < Evasion)
         {
             GameLog.Add($"{displayName}{Josa("이", "가")} 공격을 피했다.", GameLog.Info);
             DamagePopup.Spawn(DamagePopup.Above(this), "빗나감", DamagePopup.Miss, 0.9f, impact);
             return;
         }
-        int dmg = player.RollAttack();
+        int dmg = player.RollAttack() * (strike ? 2 : 1);
+        if (strike)
+        {
+            GameLog.Add("강타!", GameLog.Good);
+            CameraFollowOcclusion.Shake(0.25f, 0.2f);
+            DamagePopup.Spawn(DamagePopup.Above(this), $"강타 {dmg}!", DamagePopup.Big, 1.6f, impact);
+            StartCoroutine(FlashRed(impact));
+            TakeDamage(dmg, player, delay);
+            return;
+        }
         // 최대치로 때리면 더 크고 주황색으로
         bool best = dmg >= player.AttackMax && player.AttackMax > player.AttackMin;
         DamagePopup.Spawn(DamagePopup.Above(this), best ? $"{dmg}!" : dmg.ToString(), best ? DamagePopup.Big : DamagePopup.Hit, best ? 1.45f : 1.1f, impact);
