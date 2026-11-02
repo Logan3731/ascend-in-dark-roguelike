@@ -166,7 +166,7 @@ public class HUD : MonoBehaviour
         UIKit.Stretch(turnText.rectTransform);
 
         // 우하단 조작 안내
-        var keys = Shadowed(UIKit.Text(root, "[I] 소지품    [F] 횃불    [E] 먹기    [Esc] 메뉴", 18, TextAnchor.LowerRight, new Color(1, 1, 1, 0.45f)));
+        var keys = Shadowed(UIKit.Text(root, "[I] 소지품    [F] 횃불    [T] 횃불 던지기    [E] 먹기    [Esc] 메뉴", 18, TextAnchor.LowerRight, new Color(1, 1, 1, 0.45f)));
         UIKit.Place(keys.rectTransform, new Vector2(1, 0), new Vector2(-28, 22), new Vector2(600, 26));
 
         // 좌하단 로그 (왼쪽이 진하고 오른쪽으로 사라지는 배경)

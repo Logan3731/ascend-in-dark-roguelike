@@ -1,23 +1,33 @@
 using UnityEngine;
 
-// [이벤트 2] 굶주린 고블린: 식량을 나눠주면 조력자, 처치하면 골드를 얻지만 고블린 종족이 적대한다.
+// [이벤트 2] 굶주린 고블린: 식량을 나눠주면 조력자가 되어 골드를 받고 물건을 판다 (골드를 쓸 곳).
+// 처치하면 골드를 바로 얻지만 상인을 잃고, 고블린 종족이 적대한다.
 public class GoblinEvent : Interactable
 {
     public int goldReward = 25;
 
     public bool Ally { get; private set; }
 
+    ShopUI.Ware[] wares;   // 고블린 상인의 물건: 가격과 남은 수량 (깨어날 때마다 새로)
+
+    void Start()
+    {
+        wares = new[]
+        {
+            new ShopUI.Ware { icon = "food", label = "식량", price = 12, stock = 3, give = p => p.AddFood(1) },
+            new ShopUI.Ware { icon = "potion_red", label = "수상한 물약", price = 20, stock = 2, give = p => p.Bag.Add(Potions.RandomPotion()) },
+            new ShopUI.Ware { icon = "torch", label = "낡은 횃불", price = 15, stock = 2, give = p => p.GiveTorch() },
+            new ShopUI.Ware { icon = "key", label = "녹슨 열쇠", price = 60, stock = 1, give = p => p.Bag.Add(Items.Key) },
+        };
+    }
+
     public override void Interact(PlayerStats player)
     {
-        if (Ally)
-        {
-            GameLog.Add("고블린이 반가운 듯 끄덕인다.", GameLog.Info);
-            return;
-        }
+        if (Ally) { OpenShop(player); return; }
         if (Used) return;
 
         bool hasFood = player.Food > 0;
-        DialogUI.Show("굶주린 고블린이 웅크린 채 떨고 있다.",
+        DialogUI.Show("굶주린 고블린이 웅크린 채 떨고 있다.\n허리춤에 낡은 보따리가 매달려 있다.",
             new DialogUI.Choice(hasFood ? "식량을 나눠준다" : "식량을 나눠준다 (식량 없음)", () =>
             {
                 Used = true;
@@ -25,6 +35,9 @@ public class GoblinEvent : Interactable
                 player.AddFood(-1);
                 player.AddKarma(+1);
                 GameLog.Add("고블린이 허겁지겁 먹고는 고개를 숙인다.", GameLog.Good);
+                DialogUI.Show("\"…은혜는 갚는다. 금화가 있으면 보따리 속 물건을 내주지.\"",
+                    new DialogUI.Choice("물건을 본다", () => OpenShop(player)),
+                    new DialogUI.Choice("나중에", null));
             }, hasFood),
             new DialogUI.Choice("처치한다", () =>
             {
@@ -37,4 +50,6 @@ public class GoblinEvent : Interactable
             }),
             new DialogUI.Choice("지나친다", null));
     }
+
+    void OpenShop(PlayerStats player) => ShopUI.Open(player, wares);
 }

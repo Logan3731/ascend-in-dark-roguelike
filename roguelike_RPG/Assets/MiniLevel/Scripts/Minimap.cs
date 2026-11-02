@@ -62,6 +62,12 @@ public class Minimap : MonoBehaviour
 
     void Awake() => instance = this;
 
+    // 밝은 눈의 물약 등: 주변 칸을 한꺼번에 밝힌다
+    public static void RevealAround(Vector2Int cell, int radius)
+    {
+        if (instance != null && instance.map != null) instance.map.Reveal(cell, radius);
+    }
+
     void Start()
     {
         map = new MapData();
@@ -85,7 +91,7 @@ public class Minimap : MonoBehaviour
         if (kb != null)
         {
             if (FullOpen && kb.escapeKey.wasPressedThisFrame) { EscFrame = Time.frameCount; SetFull(false); }
-            else if (kb.mKey.wasPressedThisFrame && !TitleScreen.IsOpen && !InventoryUI.IsOpen && !PauseMenu.IsOpen && !CraftUI.IsOpen) SetFull(!FullOpen);
+            else if (kb.mKey.wasPressedThisFrame && !TitleScreen.IsOpen && !InventoryUI.IsOpen && !PauseMenu.IsOpen && !CraftUI.IsOpen && !ShopUI.IsOpen) SetFull(!FullOpen);
         }
         if (player == null || map == null || TitleScreen.IsOpen) return;
 
@@ -184,6 +190,7 @@ public class Minimap : MonoBehaviour
         foreach (var a in FindObjectsByType<Anvil>(FindObjectsSortMode.None)) Add(a.Cell, "anvil", Color.white, 1.2f);
         foreach (var c in FindObjectsByType<ChestEvent>(FindObjectsSortMode.None)) if (!c.Used) Add(c.Cell, "chest", Color.white, 1.1f);
         foreach (var w in FindObjectsByType<WallTorch>(FindObjectsSortMode.None)) Add(w.Cell, "torch", w.IsOn ? TorchOn : TorchOff, 1.5f);
+        foreach (var t in FindObjectsByType<ThrownTorch>(FindObjectsSortMode.None)) Add(t.Cell, "torch", TorchOn, 1.5f);
         foreach (var d in Door.All)
             if (!d.IsOpen) Add(d.Cell, d.locked ? "door_locked" : "door", d.locked ? Color.white : d.kind == Door.Kind.Iron ? DoorIron : DoorWood, 1f);
         foreach (var b in FindObjectsByType<BonesEvent>(FindObjectsSortMode.None)) if (!b.Used) Add(b.Cell, "skull", Color.white, 1.1f);

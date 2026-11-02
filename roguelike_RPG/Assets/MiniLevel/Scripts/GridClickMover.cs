@@ -34,7 +34,7 @@ public class GridClickMover : MonoBehaviour
     // 이동·공격·연출이 다 끝나야 다음 행동을 받는다
     bool Busy => stepping || Time.time < TurnResolver.BusyUntil;
     bool HasGoal => goalCell != null || goalTarget != null;
-    static bool Blocked => DialogUI.IsOpen || InventoryUI.IsOpen || PauseMenu.IsOpen || TitleScreen.IsOpen || Minimap.FullOpen || CraftUI.IsOpen;
+    static bool Blocked => DialogUI.IsOpen || InventoryUI.IsOpen || PauseMenu.IsOpen || TitleScreen.IsOpen || Minimap.FullOpen || CraftUI.IsOpen || ShopUI.IsOpen;
 
     static GridClickMover instance;
     void Awake() => instance = this;
@@ -53,6 +53,9 @@ public class GridClickMover : MonoBehaviour
     {
         if (stats != null && stats.Dead) { ClearGoal(); return; }
         if (Blocked) return;
+
+        // 던질 곳을 겨누는 중: 마우스 아래 칸을 표시하고, 왼쪽 클릭이면 던진다
+        if (Thrower.Aiming != null) { UpdateAim(); return; }
 
         // 클릭은 언제든 받아서 목표만 바꿔 둔다. 실제 방향 전환은 지금 걷는 한 칸을 마친 뒤에 한다.
         if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame && !PointerOverUI())
@@ -73,6 +76,35 @@ public class GridClickMover : MonoBehaviour
         {
             if (kb.fKey.wasPressedThisFrame) stats.ToggleTorch();
             if (kb.eKey.wasPressedThisFrame) stats.EatFood();
+            if (kb.tKey.wasPressedThisFrame)
+            {
+                if (stats.TorchLit) { ClearGoal(); Thrower.Begin(Items.Torch); }
+                else GameLog.Add("들고 있는 횃불이 없다. ([F]로 든다)", GameLog.Info);
+            }
+        }
+    }
+
+    void UpdateAim()
+    {
+        var mouse = Mouse.current;
+        var kb = Keyboard.current;
+        if ((kb != null && kb.escapeKey.wasPressedThisFrame) || (mouse != null && mouse.rightButton.wasPressedThisFrame))
+        {
+            Thrower.Cancel(true);
+            if (targetMarker != null) targetMarker.SetActive(false);
+            return;
+        }
+        if (mouse == null || Camera.main == null) return;
+        var ray = Camera.main.ScreenPointToRay(mouse.position.ReadValue());
+        if (!new Plane(Vector3.up, Vector3.zero).Raycast(ray, out float enter)) return;
+        var cell = GridTile.WorldToCell(ray.GetPoint(enter));
+        bool ok = Thrower.Trace(GridTile.WorldToCell(transform.position), cell, out var land, out _);
+        if (ok) ShowMarker(land);
+        else if (targetMarker != null) targetMarker.SetActive(false);
+        if (ok && !Busy && mouse.leftButton.wasPressedThisFrame && !PointerOverUI())
+        {
+            if (targetMarker != null) targetMarker.SetActive(false);
+            Thrower.Throw(stats, this, cell);
         }
     }
 

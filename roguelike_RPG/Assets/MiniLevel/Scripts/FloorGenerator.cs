@@ -78,6 +78,7 @@ public class FloorGenerator : MonoBehaviour
         Instance = this;
         Seed = seed != 0 ? seed : System.Environment.TickCount;
         rng = new System.Random(Seed);
+        Potions.NewRun(Seed);   // 물약 색과 효과의 짝을 새로 섞는다
         Generate();
         BuildObjects();
         GridNav.Invalidate();

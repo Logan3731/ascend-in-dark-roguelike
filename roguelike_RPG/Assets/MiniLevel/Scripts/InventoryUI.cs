@@ -85,7 +85,7 @@ public class InventoryUI : MonoBehaviour
             if (held != null && returning == null) heldIcon.rectTransform.anchoredPosition = mouse;
             if (tooltip.gameObject.activeSelf) PlaceNearMouse(tooltip, mouse);
         }
-        else if ((kb.iKey.wasPressedThisFrame || kb.tabKey.wasPressedThisFrame) && !DialogUI.IsOpen && !PauseMenu.IsOpen && !TitleScreen.IsOpen && !Minimap.FullOpen && !CraftUI.IsOpen && !player.Dead) Open();
+        else if ((kb.iKey.wasPressedThisFrame || kb.tabKey.wasPressedThisFrame) && !DialogUI.IsOpen && !PauseMenu.IsOpen && !TitleScreen.IsOpen && !Minimap.FullOpen && !CraftUI.IsOpen && !ShopUI.IsOpen && !player.Dead) Open();
     }
 
     public void Open()
@@ -148,7 +148,7 @@ public class InventoryUI : MonoBehaviour
         var def = slot.def;
         if (def == null || held != null || confirm.activeSelf) { HideTooltip(); return; }
 
-        string kind = def.kind == ItemKind.Food || def.kind == ItemKind.Torch ? $"소모품 · {player.Bag.Count(def)}개"
+        string kind = def.kind == ItemKind.Food || def.kind == ItemKind.Torch || def.kind == ItemKind.Potion ? $"소모품 · {player.Bag.Count(def)}개"
             : def.slot != EquipSlot.None ? $"장비 · {SlotName(def.slot)} 칸"
             : def.kind == ItemKind.Material ? $"재료 · {player.Bag.Count(def)}개"
             : "도구";
@@ -157,7 +157,8 @@ public class InventoryUI : MonoBehaviour
         if (def.kind == ItemKind.Food) s += $"\n\n<color=#a8d46f>허기 +{player.foodRestore}</color>";
         if (def.kind == ItemKind.Torch && player.HasTorch) s += $"\n\n<color=#f08a2b>지금 쓰는 횃불 내구도 {player.Torch} / {player.maxTorch}</color>";
         string hint = equipped ? "클릭하거나 끌어서 가방에 넣으면 벗는다"
-            : def.kind == ItemKind.Food || def.kind == ItemKind.Torch ? "클릭: 사용"
+            : def == Items.Stone ? "클릭: 던지기 (재료로도 쓴다)"
+            : Usable(def) ? "클릭: 사용"
             : def.slot != EquipSlot.None ? "클릭하거나 끌어서 장비 칸에 넣는다"
             : def.kind == ItemKind.Material ? "시작한 방의 모루에서 쓸 수 있다"
             : "아직 쓸 곳이 없다";
@@ -202,6 +203,12 @@ public class InventoryUI : MonoBehaviour
                              : $"허기  {p.Hunger} → {after}   <color=#9e9480>(이미 배부르다)</color>") +
                    $"\n<color=#9e9480>{def.name} {p.Food} → {p.Food - 1}</color>";
         }
+        else if (def.kind == ItemKind.Potion)
+            body = $"<size=26><color=#dcb86b>{def.name}{Korean.Josa(def.name, "을", "를")} 마실까?</color></size>\n\n" +
+                   (Potions.IsKnown(def) ? $"<color=#a8d46f>{Potions.Preview(def)}</color>" : "<color=#e0a04a>무슨 일이 일어날지 모른다…</color>");
+        else if (def == Items.Stone)
+            body = "<size=26><color=#dcb86b>돌멩이를 던질까?</color></size>\n\n" +
+                   $"던질 칸을 고른다 ({Thrower.Range}칸까지)\n<color=#dcb86b>맞으면 피해 2~4</color>\n<color=#9e9480>떨어진 돌은 다시 주울 수 있다</color>";
         else if (!p.TorchHeld)
             body = $"<size=26><color=#dcb86b>{def.name}{Korean.Josa(def.name, "을", "를")} 들까?</color></size>\n\n" +
                    "<color=#f08a2b>주변이 밝아진다</color>\n" +
@@ -211,7 +218,7 @@ public class InventoryUI : MonoBehaviour
                    "<color=#9e9480>주변이 어두워진다</color>\n" +
                    "내구도가 줄지 않는다";
         confirmText.text = body;
-        confirmUse.GetComponentInChildren<Text>().text = def.kind == ItemKind.Food ? "먹는다" : p.TorchHeld ? "내린다" : "든다";
+        confirmUse.GetComponentInChildren<Text>().text = def.kind == ItemKind.Food ? "먹는다" : def.kind == ItemKind.Potion ? "마신다" : def == Items.Stone ? "던진다" : p.TorchHeld ? "내린다" : "든다";
 
         confirm.SetActive(true);
         confirm.transform.SetAsLastSibling();
@@ -233,6 +240,8 @@ public class InventoryUI : MonoBehaviour
         if (def == null) return;
         if (def.kind == ItemKind.Food) player.EatFood();
         else if (def.kind == ItemKind.Torch) player.ToggleTorch();
+        else if (def.kind == ItemKind.Potion) Potions.Drink(player, def);
+        else if (def == Items.Stone) { Close(); Thrower.Begin(Items.Stone); }
     }
 
     // ---- 장비 들기·놓기 ----
@@ -327,12 +336,15 @@ public class InventoryUI : MonoBehaviour
 
     // ---- 칸 클릭·끌기 ----
 
+    // 클릭하면 사용 확인 창이 뜨는 것 (먹기·횃불·물약·돌 던지기)
+    static bool Usable(ItemDef d) => d.kind == ItemKind.Food || d.kind == ItemKind.Torch || d.kind == ItemKind.Potion || d == Items.Stone;
+
     void ClickBagSlot(InventorySlotView slot)
     {
         if (returning != null) return;
         if (held != null) { DropOnBag(); return; }
         if (slot.def == null) return;
-        if (slot.def.kind == ItemKind.Food || slot.def.kind == ItemKind.Torch) OpenConfirm(slot);
+        if (Usable(slot.def)) OpenConfirm(slot);
         else PickUp(slot, EquipSlot.None);
     }
 
@@ -348,7 +360,7 @@ public class InventoryUI : MonoBehaviour
     {
         if (held != null || slot.def == null || confirm.activeSelf) return;
         if (isEquip) PickUp(slot, EquippedKey(SlotOf(slot)));
-        else if (slot.def.kind != ItemKind.Food && slot.def.kind != ItemKind.Torch) PickUp(slot, EquipSlot.None);
+        else if (!Usable(slot.def)) PickUp(slot, EquipSlot.None);
     }
 
     void EndDrag(PointerEventData e)

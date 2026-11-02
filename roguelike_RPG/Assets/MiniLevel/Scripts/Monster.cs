@@ -128,6 +128,15 @@ public class Monster : Interactable
         TakeDamage(dmg, player, delay);
     }
 
+    // 던진 돌·횃불에 맞는다 (피하지 못한다)
+    public void HitByThrow(PlayerStats player, int dmg, string what, float delay)
+    {
+        DamagePopup.Spawn(DamagePopup.Above(this), dmg.ToString(), DamagePopup.Hit, 1.1f, delay);
+        StartCoroutine(FlashRed(delay));
+        GameLog.Add($"던진 {what}{Korean.Josa(what, "이", "가")} {displayName}에게 맞았다.", GameLog.Info);
+        TakeDamage(dmg, player, delay);
+    }
+
     // 차례가 와서 플레이어를 공격한다. 연출에 쓴 시간(다음 공격까지 간격)을 돌려준다.
     public float AttackPlayer(PlayerStats player, float delay)
     {

@@ -195,6 +195,54 @@ public class PlayerStats : MonoBehaviour, LightSources.ISource
     public void AddGold(int amount) { Gold = Mathf.Max(0, Gold + amount); OnChanged?.Invoke(); }
     public void AddKarma(int amount) { TowerMemory.AddKarma(amount); Debug.Log($"[Karma] {Karma}"); }
     public void AddExp(int amount) { Exp += amount; OnChanged?.Invoke(); }
+
+    // 물약 등으로 체력·허기를 채운다 / 독을 뺀다
+    public void Heal(int amount)
+    {
+        if (Dead) return;
+        int before = Hp;
+        Hp = Mathf.Min(maxHp, Hp + amount);
+        DamagePopup.Spawn(DamagePopup.Above(this), $"+{Hp - before}", DamagePopup.Poison, 1.1f);
+        OnChanged?.Invoke();
+    }
+
+    public void Feed(int amount)
+    {
+        int before = Hunger;
+        Hunger = Mathf.Min(maxHunger, Hunger + amount);
+        DamagePopup.Spawn(DamagePopup.Above(this), $"허기 +{Hunger - before}", DamagePopup.Heal, 0.9f);
+        OnChanged?.Invoke();
+    }
+
+    public void CurePoison()
+    {
+        if (PoisonTurns == 0) return;
+        PoisonTurns = 0;
+        GameLog.Add("독이 빠졌다.", GameLog.Good);
+        OnChanged?.Invoke();
+    }
+
+    // 들고 있던 횃불을 던진다: 남은 내구도를 돌려준다. 가방에 횃불이 더 있으면 새 것을 든다.
+    public int ReleaseTorch()
+    {
+        int left = Torch;
+        Bag.Remove(Items.Torch);
+        if (HasTorch) Torch = maxTorch;
+        else TorchHeld = false;
+        ApplyTorchVisual();
+        OnChanged?.Invoke();
+        return left;
+    }
+
+    // 던져 둔 횃불을 다시 줍는다 (들고 있던 게 없으면 남은 내구도 그대로)
+    public void PickUpTorch(int durability)
+    {
+        bool had = HasTorch;
+        Bag.Add(Items.Torch);
+        if (!had) Torch = durability;
+        ApplyTorchVisual();
+        OnChanged?.Invoke();
+    }
     // 입구의 곡괭이와 도끼: 도끼는 무기 칸에 바로 장착
     public void GiveTools()
     {

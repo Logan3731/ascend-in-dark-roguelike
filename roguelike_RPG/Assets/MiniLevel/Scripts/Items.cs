@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 
-public enum ItemKind { Food, Torch, Tool, Equipment, Material }
+public enum ItemKind { Food, Torch, Tool, Equipment, Material, Potion }
 
 // 장비 칸: 모자 / 상의 / 하의 / 신발 / 무기. 상하의(일체형)는 상의·하의 두 칸을 함께 차지한다.
 public enum EquipSlot { None, Hat, Top, Bottom, TopBottom, Shoes, Weapon }

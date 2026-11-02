@@ -52,25 +52,35 @@ public class ChestEvent : Interactable
     List<string> RollLoot(PlayerStats player)
     {
         var got = new List<string>();
-        int food = 0, gold = 0;
+        int food = 0, gold = 0, potions = 0;
         bool torch = givesTorch;
+        // 골드는 고블린 상인에게, 물약은 마셔 봐야 아는 도박 — 상자마다 고를 거리가 생기게
         switch (tier)
         {
             case Tier.Small:
-                if (Random.value < 0.6f) food = 1; else gold = Random.Range(5, 11);
+                float r = Random.value;
+                if (r < 0.4f) food = 1; else if (r < 0.75f) potions = 1; else gold = Random.Range(8, 15);
                 break;
             case Tier.Big:
-                food = Random.Range(1, 3);
+                food = Random.Range(0, 2);
                 gold = Random.Range(10, 21);
+                potions = 1;
                 break;
             case Tier.Elite:
-                food = 3;
+                food = 2;
                 gold = Random.Range(40, 61);
+                potions = 2;
                 torch = true;
                 break;
         }
 
         if (torch) { player.GiveTorch(); got.Add("낡은 횃불"); }
+        for (int i = 0; i < potions; i++)
+        {
+            var pot = Potions.RandomPotion();
+            player.Bag.Add(pot);
+            got.Add(pot.name);
+        }
         if (food > 0) { player.AddFood(food); got.Add($"식량 {food}"); }
         if (gold > 0) { player.AddGold(gold); got.Add($"골드 {gold}"); }
         if (keys > 0) { player.Bag.Add(Items.Key, keys); got.Add(keys > 1 ? $"녹슨 열쇠 {keys}" : "녹슨 열쇠"); }

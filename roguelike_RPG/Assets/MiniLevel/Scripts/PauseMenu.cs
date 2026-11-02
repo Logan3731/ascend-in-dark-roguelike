@@ -32,7 +32,7 @@ public class PauseMenu : MonoBehaviour
             else Close();
             return;
         }
-        if (TitleScreen.IsOpen || DialogUI.IsOpen || InventoryUI.IsOpen || InventoryUI.EscFrame == Time.frameCount || Minimap.FullOpen || Minimap.EscFrame == Time.frameCount || CraftUI.IsOpen || CraftUI.EscFrame == Time.frameCount) return;
+        if (TitleScreen.IsOpen || DialogUI.IsOpen || InventoryUI.IsOpen || InventoryUI.EscFrame == Time.frameCount || Minimap.FullOpen || Minimap.EscFrame == Time.frameCount || CraftUI.IsOpen || CraftUI.EscFrame == Time.frameCount || ShopUI.IsOpen || ShopUI.EscFrame == Time.frameCount || Thrower.Aiming != null || Thrower.EscFrame == Time.frameCount) return;
         if (player != null && player.Dead) return;
         Open();
     }
@@ -101,7 +101,7 @@ public class PauseMenu : MonoBehaviour
             UIKit.Place((RectTransform)b.transform, new Vector2(0.5f, 1), new Vector2(0, -120 - i * 84), new Vector2(320, 62));
         }
 
-        controls = Panel("Controls", new Vector2(640, 500));
+        controls = Panel("Controls", new Vector2(640, 590));
         var cr = (RectTransform)controls.transform;
         var ct = UIKit.Text(cr, "조작법", 36, TextAnchor.UpperCenter, UIKit.Gold);
         UIKit.Place(ct.rectTransform, new Vector2(0.5f, 1), new Vector2(0, -30), new Vector2(560, 50));
@@ -113,7 +113,9 @@ public class PauseMenu : MonoBehaviour
             ("", "상자·도구·뼈: 다가가서 살펴보기"),
             ("I / Tab", "소지품·상태창"),
             ("F", "횃불 들기 / 내리기"),
+            ("T", "든 횃불 던지기 (떨어진 곳이 빛 구역)"),
             ("E", "식량 먹기"),
+            ("M", "전체 지도"),
             ("Esc", "일시정지"),
         };
         for (int i = 0; i < rows.Length; i++)
