@@ -170,9 +170,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4c9d9e2b5ff18e448ba2be57b21006ba, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::FloorGenerator
-  width: 48
-  height: 48
-  maxRooms: 20
+  width: 41
+  height: 41
+  maxRooms: 16
   seed: 0
   floorPrefab: {fileID: 1444709380592222624, guid: d6713063dc4f57d44922988eadc7acef, type: 3}
   wallPrefab: {fileID: 8590372288420444779, guid: 602692b43a09eca4da2bc0c6422e5f97, type: 3}

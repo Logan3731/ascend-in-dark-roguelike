@@ -22,11 +22,16 @@ public class Minimap : MonoBehaviour
     static readonly Color FloorColor = new Color(0.46f, 0.43f, 0.38f);
     static readonly Color FloorEdge = new Color(0.34f, 0.31f, 0.27f);
     static readonly Color WallColor = new Color(0.17f, 0.15f, 0.13f);
+    static readonly Color SeenColor = new Color(0.25f, 0.55f, 0.8f, 0.45f);   // 보이기만 한 바닥 (밟으면 또렷해진다)
+    static readonly Color SeenEdge = new Color(0.2f, 0.45f, 0.7f, 0.55f);
+    static readonly Color DoorWood = new Color(0.62f, 0.4f, 0.22f), DoorIron = new Color(0.62f, 0.66f, 0.72f), DoorLocked = new Color(1f, 0.78f, 0.25f);
 
     MapData map;
     Transform door;
     Texture2D tex;
     MapView preview, full;
+    Canvas fullCanvasComp;
+    GridClickMover mover;
     GameObject fullRoot;
     Vector2Int lastCell = new Vector2Int(int.MinValue, 0);
     bool lastTorch;
@@ -58,6 +63,7 @@ public class Minimap : MonoBehaviour
         tex.SetPixels(clear);
         tex.Apply();
         map.OnRevealed += Paint;
+        if (player != null) mover = player.GetComponent<GridClickMover>();
         Build();
     }
 
@@ -78,6 +84,7 @@ public class Minimap : MonoBehaviour
             lastCell = cell;
             lastTorch = player.TorchLit;
             map.Reveal(cell, player.TorchLit ? radiusWithTorch : radiusWithoutTorch);
+            map.Visit(cell);
             iconTimer = 0f;
         }
 
@@ -97,12 +104,37 @@ public class Minimap : MonoBehaviour
         float yaw = player.transform.eulerAngles.y;
         preview.SetPlayer(new Vector2(p.x, p.z), yaw);
         if (FullOpen) full.SetPlayer(new Vector2(p.x, p.z), yaw);
+        if (FullOpen) full.SetHover(TravelCell());
     }
 
     void SetFull(bool open)
     {
         fullRoot.SetActive(open);
         if (open) { GatherIcons(); full.SetIcons(icons); }
+    }
+
+    // 전체 지도에서 마우스 아래 칸 — 직접 밟아 본 곳이고 지금 서 있는 칸이 아니면 이동할 수 있다
+    Vector2Int? TravelCell()
+    {
+        if (Mouse.current == null || player == null) return null;
+        var cam = fullCanvasComp.renderMode == RenderMode.ScreenSpaceOverlay ? null : fullCanvasComp.worldCamera;
+        var cell = full.CellAt(Mouse.current.position.ReadValue(), cam);
+        if (cell == null || !map.IsVisited(cell.Value) || cell.Value == GridTile.WorldToCell(player.transform.position)) return null;
+        return cell;
+    }
+
+    void TryTravel()
+    {
+        var cell = TravelCell();
+        if (cell == null || mover == null) return;
+        var target = cell.Value;
+        SetFull(false);
+        DialogUI.Show("이곳으로 이동하시겠습니까?",
+            new DialogUI.Choice("이동", () =>
+            {
+                if (!mover.SetDestination(target)) GameLog.Add("지금은 그곳으로 가는 길이 막혀 있다.", GameLog.Warn);
+            }),
+            new DialogUI.Choice("취소", null));
     }
 
     // 새로 밝혀진 칸만 칠한다
@@ -115,8 +147,9 @@ public class Minimap : MonoBehaviour
             for (int x = 0; x < Px; x++)
                 for (int y = 0; y < Px; y++)
                 {
+                    bool edge = x == 0 || y == 0 || x == Px - 1 || y == Px - 1;
                     Color col = t == MapData.Terrain.Wall ? WallColor
-                        : t == MapData.Terrain.Floor ? ((x == 0 || y == 0 || x == Px - 1 || y == Px - 1) ? FloorEdge : FloorColor)
+                        : t == MapData.Terrain.Floor ? (map.IsVisited(c) ? (edge ? FloorEdge : FloorColor) : (edge ? SeenEdge : SeenColor))
                         : Unexplored;
                     tex.SetPixel(x0 + x, y0 + y, col);
                 }
@@ -136,6 +169,7 @@ public class Minimap : MonoBehaviour
         if (door != null) Add(GridTile.WorldToCell(door.position), "▬", new Color(0.86f, 0.72f, 0.42f), 1.2f);
         foreach (var c in FindObjectsByType<ChestEvent>(FindObjectsSortMode.None)) if (!c.Used) Add(c.Cell, "■", new Color(0.95f, 0.78f, 0.3f));
         foreach (var w in FindObjectsByType<WallTorch>(FindObjectsSortMode.None)) Add(w.Cell, "●", w.IsOn ? new Color(1f, 0.62f, 0.2f) : new Color(0.45f, 0.36f, 0.28f), 0.8f);
+        foreach (var d in Door.All) if (!d.IsOpen) Add(d.Cell, "■", d.locked ? DoorLocked : d.kind == Door.Kind.Iron ? DoorIron : DoorWood, 0.75f);
         foreach (var b in FindObjectsByType<BonesEvent>(FindObjectsSortMode.None)) if (!b.Used) Add(b.Cell, "×", new Color(0.92f, 0.9f, 0.82f), 1.2f);
         foreach (var t in FindObjectsByType<ToolsEvent>(FindObjectsSortMode.None)) if (!t.Used) Add(t.Cell, "♦", new Color(0.72f, 0.72f, 0.78f));
         foreach (var g in FindObjectsByType<GoblinEvent>(FindObjectsSortMode.None)) Add(g.Cell, "●", new Color(0.5f, 0.85f, 0.4f));
@@ -174,6 +208,7 @@ public class Minimap : MonoBehaviour
 
         // 전체 지도
         var fullCanvas = UIKit.Canvas(transform, "FullMapCanvas", 16);
+        fullCanvasComp = fullCanvas.GetComponent<Canvas>();
         fullRoot = fullCanvas.gameObject;
         var dim = UIKit.Image(fullCanvas, "Dim", new Color(0, 0, 0, 0.7f), true);
         UIKit.Stretch(dim.rectTransform);
@@ -182,11 +217,11 @@ public class Minimap : MonoBehaviour
         var panel = UIKit.Image(fullCanvas, "Panel", new Color(0.05f, 0.045f, 0.04f, 0.97f), true);
         UIKit.Place(panel.rectTransform, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(1180, 860));
         panel.gameObject.AddComponent<Outline>().effectColor = new Color(0.55f, 0.45f, 0.3f, 0.8f);
-        panel.gameObject.AddComponent<UIClickCatcher>().onClick = () => SetFull(false);
+        panel.gameObject.AddComponent<UIClickCatcher>().onClick = TryTravel;   // 지나온 곳을 누르면 그리로 이동
         var title = UIKit.Text(panel.rectTransform, "지도", 34, TextAnchor.UpperLeft, UIKit.Gold);
         UIKit.Place(title.rectTransform, new Vector2(0, 1), new Vector2(36, -24), new Vector2(300, 44));
-        var close = UIKit.Text(panel.rectTransform, "[M] 또는 클릭하면 닫기", 18, TextAnchor.UpperRight, UIKit.Dim);
-        UIKit.Place(close.rectTransform, new Vector2(1, 1), new Vector2(-36, -30), new Vector2(300, 30));
+        var close = UIKit.Text(panel.rectTransform, "지나온 곳을 누르면 그곳으로 이동 · [M] 닫기", 18, TextAnchor.UpperRight, UIKit.Dim);
+        UIKit.Place(close.rectTransform, new Vector2(1, 1), new Vector2(-36, -30), new Vector2(600, 30));
 
         var area = new GameObject("MapArea", typeof(RectTransform)).GetComponent<RectTransform>();
         area.SetParent(panel.rectTransform, false);
@@ -208,6 +243,9 @@ public class Minimap : MonoBehaviour
             ("×", new Color(0.92f, 0.9f, 0.82f), "누군가의 뼈"),
             ("♦", new Color(0.72f, 0.72f, 0.78f), "곡괭이·도끼"),
             ("▬", new Color(0.86f, 0.72f, 0.42f), "거대한 문"),
+            ("■", DoorWood, "나무문 (닫힘)"),
+            ("■", DoorIron, "철문 (닫힘, 두 번 밀기)"),
+            ("■", DoorLocked, "잠긴 문 (열쇠 필요)"),
             ("▲", new Color(0.55f, 0.78f, 1f), "계단"),
         };
         var lh = UIKit.Text(panel.rectTransform, "범례", 24, TextAnchor.UpperLeft, UIKit.Gold);
@@ -215,12 +253,12 @@ public class Minimap : MonoBehaviour
         for (int i = 0; i < legend.Length; i++)
         {
             var g = UIKit.Text(panel.rectTransform, legend[i].g, 22, TextAnchor.MiddleCenter, legend[i].c);
-            UIKit.Place(g.rectTransform, new Vector2(1, 1), new Vector2(-270, -156 - i * 38), new Vector2(30, 32));
+            UIKit.Place(g.rectTransform, new Vector2(1, 1), new Vector2(-270, -150 - i * 34), new Vector2(30, 32));
             var t = UIKit.Text(panel.rectTransform, legend[i].label, 19, TextAnchor.MiddleLeft, GameLog.Info);
-            UIKit.Place(t.rectTransform, new Vector2(1, 1), new Vector2(-40, -156 - i * 38), new Vector2(220, 32));
+            UIKit.Place(t.rectTransform, new Vector2(1, 1), new Vector2(-40, -150 - i * 34), new Vector2(220, 32));
         }
-        var fog = UIKit.Text(panel.rectTransform, "검은 곳은 아직 가 보지 않은 곳.\n횃불을 들면 더 넓게 밝혀진다.", 17, TextAnchor.UpperLeft, UIKit.Dim);
-        UIKit.Place(fog.rectTransform, new Vector2(1, 1), new Vector2(-40, -156 - legend.Length * 38 - 10), new Vector2(260, 60));
+        var fog = UIKit.Text(panel.rectTransform, "파란 곳은 눈으로만 본 곳, 밟은 곳은 또렷하게.\n검은 곳은 아직 모르는 곳.\n횃불을 들면 더 넓게 보인다.", 17, TextAnchor.UpperLeft, UIKit.Dim);
+        UIKit.Place(fog.rectTransform, new Vector2(1, 1), new Vector2(-40, -150 - legend.Length * 34 - 6), new Vector2(270, 80));
 
         fullRoot.SetActive(false);
     }
@@ -232,6 +270,7 @@ public class Minimap : MonoBehaviour
         readonly RectInt bounds;
         readonly float unit;
         readonly List<Text> pool = new List<Text>();
+        Image hover;
         readonly Text playerMark;
         static readonly Quaternion Rot = Quaternion.Euler(0, 0, 45f);
 
@@ -264,6 +303,31 @@ public class Minimap : MonoBehaviour
             (cell.y - bounds.yMin + 0.5f) * unit - bounds.height * unit * 0.5f);
 
         public void CenterOn(Vector2 cell) => content.anchoredPosition = -(Vector2)(Rot * Local(cell));
+
+        // 화면 좌표 → 칸 (45° 돌린 것까지 거꾸로 계산)
+        public Vector2Int? CellAt(Vector2 screen, Camera cam)
+        {
+            if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(content, screen, cam, out var local)) return null;
+            float x = (local.x + bounds.width * unit * 0.5f) / unit - 0.5f + bounds.xMin;
+            float y = (local.y + bounds.height * unit * 0.5f) / unit - 0.5f + bounds.yMin;
+            var c = new Vector2Int(Mathf.RoundToInt(x), Mathf.RoundToInt(y));
+            return bounds.Contains(c) ? c : (Vector2Int?)null;
+        }
+
+        // 이동할 수 있는 칸 위에 마우스를 올리면 그 칸을 밝게 표시
+        public void SetHover(Vector2Int? cell)
+        {
+            if (hover == null)
+            {
+                hover = new GameObject("Hover", typeof(Image)).GetComponent<Image>();
+                hover.transform.SetParent(iconLayer, false);
+                hover.color = new Color(1f, 0.92f, 0.6f, 0.45f);
+                hover.raycastTarget = false;
+                hover.rectTransform.sizeDelta = new Vector2(unit, unit);
+            }
+            hover.enabled = cell != null;
+            if (cell != null) hover.rectTransform.anchoredPosition = Local(cell.Value);
+        }
 
         public void SetPlayer(Vector2 cell, float yaw)
         {

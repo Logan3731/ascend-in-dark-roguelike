@@ -94,7 +94,8 @@ public class HUD : MonoBehaviour
         if (!s.HasTorch) torch.value.text = "없음";
 
         foodText.text = $"× {s.Food}";
-        goldText.text = $"골드 {s.Gold}";
+        int keys = s.Bag.Count(Items.Key);
+        goldText.text = keys > 0 ? $"골드 {s.Gold}     열쇠 {keys}" : $"골드 {s.Gold}";
     }
 
     static void SetBar(Bar b, int value, int max, bool warn)

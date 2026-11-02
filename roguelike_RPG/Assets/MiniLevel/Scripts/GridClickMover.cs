@@ -36,6 +36,12 @@ public class GridClickMover : MonoBehaviour
     bool HasGoal => goalCell != null || goalTarget != null;
     static bool Blocked => DialogUI.IsOpen || InventoryUI.IsOpen || PauseMenu.IsOpen || TitleScreen.IsOpen || Minimap.FullOpen;
 
+    static GridClickMover instance;
+    void Awake() => instance = this;
+
+    // 걷던 길을 멈춘다 (몬스터가 나를 알아챘을 때 등). 지금 걷는 한 칸은 마저 걷는다.
+    public static void StopWalking() { if (instance != null) instance.ClearGoal(); }
+
     void Start()
     {
         stats = GetComponent<PlayerStats>();
@@ -117,19 +123,20 @@ public class GridClickMover : MonoBehaviour
         SetDestination(cell);
     }
 
-    public void SetDestination(Vector2Int goal)
+    public bool SetDestination(Vector2Int goal)
     {
         var here = CurrentCell;
         if (goal == here)
         {
             // 걷는 중에 내 자리를 누르면 이번 칸에서 멈춘다
             if (HasGoal) { goalTarget = null; goalCell = here; ShowMarker(here); }
-            return;
+            return true;
         }
-        if (FindPath(here, c => c == goal) == null) return;
+        if (FindPath(here, c => c == goal) == null) return false;
         goalTarget = null;
         goalCell = goal;
         ShowMarker(goal);
+        return true;
     }
 
     // 목표를 다시 확인하고 한 칸만 움직이거나, 도착했으면 상호작용한다
@@ -151,7 +158,7 @@ public class GridClickMover : MonoBehaviour
             var route = FindPath(here, c => IsNextTo(c, target.Cell));
             if (route == null || route.Count == 0) { ClearGoal(); return; }
             ShowMarker(target.Cell);
-            StartCoroutine(Step(route[0]));
+            StepOrOpen(route[0]);
             return;
         }
 
@@ -161,8 +168,16 @@ public class GridClickMover : MonoBehaviour
             if (here == goal) { ClearGoal(); return; }
             var route = FindPath(here, c => c == goal);
             if (route == null || route.Count == 0) { ClearGoal(); return; }
-            StartCoroutine(Step(route[0]));
+            StepOrOpen(route[0]);
         }
+    }
+
+    // 다음 칸이 닫힌 문이면 이번 턴은 문을 민다 (목표는 그대로라 열리면 이어서 걷는다)
+    void StepOrOpen(Vector2Int next)
+    {
+        var door = Door.At(next);
+        if (door != null && !door.IsOpen) { if (animator != null) animator.SetBool(MovingParam, false); door.Push(stats, false); return; }
+        StartCoroutine(Step(next));
     }
 
     void ShowMarker(Vector2Int cell)
@@ -186,8 +201,12 @@ public class GridClickMover : MonoBehaviour
     static List<Vector2Int> FindPath(Vector2Int start, System.Func<Vector2Int, bool> isGoal)
     {
         var floors = GridNav.Floors();
-        return GridNav.FindPath(start, isGoal, GridNav.Walkable(floors), floors);
+        var walkable = GridNav.Walkable(floors);
+        foreach (var d in Door.All) if (!d.IsOpen && !d.locked) walkable.Add(d.Cell);   // 닫힌 문은 가다가 연다
+        return GridNav.FindPath(start, isGoal, walkable, floors);
     }
+
+    public void FaceTo(Vector3 worldPos) => Face(worldPos);
 
     void Face(Vector3 worldPos)
     {

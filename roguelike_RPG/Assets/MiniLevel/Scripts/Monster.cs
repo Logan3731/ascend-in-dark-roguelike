@@ -196,6 +196,7 @@ public class Monster : Interactable
         {
             awake = true;
             GameLog.Add($"{displayName}{Josa("이", "가")} 이쪽을 노려본다!", GameLog.Warn);
+            GridClickMover.StopWalking();   // 멀리 걸어가던 중이면 멈춰서 상황을 보게
             if (!InLight && !darkHintShown)
             {
                 darkHintShown = true;

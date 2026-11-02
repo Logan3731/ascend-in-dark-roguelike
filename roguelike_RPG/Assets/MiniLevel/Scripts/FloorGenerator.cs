@@ -2,19 +2,28 @@ using System.Collections.Generic;
 using UnityEngine;
 
 // 1층 미로를 깨어날 때마다 새로 만든다 (죽거나 처음 화면으로 돌아가면 씬을 다시 불러오므로 매번 다른 모양).
-// 1) 시작 방: 플레이어·곡괭이와 도끼. 출구는 거대한 문 하나뿐.
-// 2) 방 여러 개를 흩어 놓고, 구불구불한 1칸 통로로 잇는다 (최소 연결 + 고리 몇 개 + 막다른 길).
-// 3) 문에서 가장 먼 방에 위로 가는 계단. 가까운 방엔 횃불 상자, 중간쯤 굶주린 고블린.
-// 4) 깊이 들어갈수록 몬스터가 세진다. 방 벽엔 꺼진 벽 횃불, 막다른 길 끝엔 작은 상자.
+// "방 + 미로 채우기" 방식이라 빈 바위 없이 촘촘하다.
+// 1) 홀수 칸 격자에 방을 흩어 놓는다 (시작 방 포함).
+// 2) 남은 공간을 1칸 통로 미로로 가득 채운다.
+// 3) 방과 통로 사이의 벽 한 칸을 뚫어(문) 전체를 하나로 잇고, 고리 몇 개를 더 연다.
+// 4) 막다른 길은 대부분 메우고 몇 개만 남긴다 → 그 끝에 보물상자.
+// 5) 방의 문은 나무문·철문. 문이 하나뿐인 방 몇 곳은 잠그고, 열쇠는 상자에서 나온다 (잠긴 문보다 적게).
+// 시작 방의 출구는 거대한 문 하나. 문에서 가장 먼 방에 계단. 깊이 들어갈수록 몬스터가 세진다.
 // 다른 스크립트가 바닥을 찾기 전에 끝나야 해서 가장 먼저 실행한다.
 [DefaultExecutionOrder(-500)]
 public class FloorGenerator : MonoBehaviour
 {
     public static FloorGenerator Instance { get; private set; }
 
-    [Header("크기")]
-    public int width = 48, height = 48;
-    public int maxRooms = 20;
+    [Header("크기 (홀수)")]
+    public int width = 41, height = 41;
+    public int maxRooms = 16;
+    public int keepDeadEnds = 8;        // 남길 막다른 길 (끝에 상자)
+    public int maxDeadEndLength = 7;    // 남긴 막다른 길이 너무 길면 이만큼으로 줄인다
+    [Range(0f, 0.3f)] public float extraDoorChance = 0.12f;   // 고리를 만드는 여분의 문
+    [Range(0f, 1f)] public float straightness = 0.4f;          // 통로가 곧게 이어질 확률 (낮을수록 구불구불)
+    public int lockedRooms = 3;
+    [Range(0f, 1f)] public float ironDoorChance = 0.3f;
     public int seed;   // 0이면 매번 무작위
 
     [Header("프리팹")]
@@ -32,18 +41,32 @@ public class FloorGenerator : MonoBehaviour
     public Transform stairs;
     public Transform darkTrigger;   // 문을 나서면 "너무 어둡다" 안내
 
-    enum C { Solid, Room, Corridor }
+    public int Seed { get; private set; }
+
+    enum C { Solid, Room, Corridor, Door }
+
+    class Room
+    {
+        public RectInt rect;
+        public int region;
+        public readonly List<Vector2Int> doors = new List<Vector2Int>();
+        public bool locked, hasChest;
+    }
+
+    static readonly Vector2Int[] Dirs4 = { Vector2Int.up, Vector2Int.down, Vector2Int.left, Vector2Int.right };
+
     C[,] grid;
+    int[,] region;
+    int regionCount;
     System.Random rng;
-    RectInt startRoom;
-    readonly List<RectInt> rooms = new List<RectInt>();      // 시작 방 제외
+    Room start;
+    readonly List<Room> rooms = new List<Room>();   // 시작 방 제외
     readonly List<Vector2Int> deadEnds = new List<Vector2Int>();
     readonly HashSet<Vector2Int> occupied = new HashSet<Vector2Int>();
     Dictionary<Vector2Int, int> dist;   // 문 밖 첫 칸에서 걸음 수
     int maxDist;
     Vector2Int doorCell, outsideDoor;
-
-    public int Seed { get; private set; }
+    Transform root;
 
     void Awake()
     {
@@ -53,176 +76,242 @@ public class FloorGenerator : MonoBehaviour
         Generate();
         BuildObjects();
         GridNav.Invalidate();
-        Debug.Log($"[1층 생성] seed={Seed} 방 {rooms.Count + 1}개, 막다른 길 {deadEnds.Count}개, 가장 먼 방까지 {maxDist}걸음");
+        Debug.Log($"[1층 생성] seed={Seed} 방 {rooms.Count + 1}개, 바닥 {CountFloors()}칸, 막다른 길 {deadEnds.Count}개, 잠긴 방 {rooms.FindAll(r => r.locked).Count}개, 가장 먼 방까지 {maxDist}걸음");
     }
 
     int R(int min, int maxExclusive) => rng.Next(min, maxExclusive);
     float R01() => (float)rng.NextDouble();
     T Pick<T>(IList<T> list) => list[R(0, list.Count)];
+    void Shuffle<T>(IList<T> list)
+    {
+        for (int i = list.Count - 1; i > 0; i--) { int j = R(0, i + 1); (list[i], list[j]) = (list[j], list[i]); }
+    }
 
     bool In(Vector2Int c) => c.x >= 0 && c.y >= 0 && c.x < width && c.y < height;
-    bool IsFloor(Vector2Int c) => In(c) && grid[c.x, c.y] != C.Solid;
+    C At(Vector2Int c) => In(c) ? grid[c.x, c.y] : C.Solid;
+    bool IsFloor(Vector2Int c) => At(c) != C.Solid;
+    int CountFloors() { int n = 0; foreach (var c in grid) if (c != C.Solid) n++; return n; }
+
+    int OpenNeighbors(Vector2Int c)
+    {
+        int n = 0;
+        foreach (var d in Dirs4) if (IsFloor(c + d)) n++;
+        return n;
+    }
 
     // ---- 1. 지형 ----
 
     void Generate()
     {
         grid = new C[width, height];
+        region = new int[width, height];
+        for (int x = 0; x < width; x++) for (int y = 0; y < height; y++) region[x, y] = -1;
 
-        // 시작 방: 네 모서리 중 한 곳, 5×5
-        int corner = R(0, 4);
-        int sx = (corner & 1) == 0 ? 2 : width - 7, sy = (corner & 2) == 0 ? 2 : height - 7;
-        startRoom = new RectInt(sx, sy, 5, 5);
-        Carve(startRoom, C.Room);
-
-        // 문: 맵 가운데를 향한 벽의 한가운데
-        var center = new Vector2(width / 2f, height / 2f);
-        var toCenter = center - startRoom.center;
-        Vector2Int outDir = Mathf.Abs(toCenter.x) > Mathf.Abs(toCenter.y)
-            ? new Vector2Int(toCenter.x > 0 ? 1 : -1, 0)
-            : new Vector2Int(0, toCenter.y > 0 ? 1 : -1);
-        var mid = new Vector2Int(startRoom.x + 2, startRoom.y + 2);
-        doorCell = mid + outDir * 3;
-        outsideDoor = doorCell + outDir;
-        grid[doorCell.x, doorCell.y] = C.Corridor;
-        grid[outsideDoor.x, outsideDoor.y] = C.Corridor;
-        doorDir = outDir;
-
-        // 다른 방들 (시작 방과 겹치지 않게, 서로 벽 2칸 이상 떨어지게)
-        var startZone = Grow(startRoom, 3);
-        for (int attempt = 0; attempt < 600 && rooms.Count < maxRooms - 1; attempt++)
-        {
-            int w = R(3, 9), h = R(3, 9);
-            var r = new RectInt(R(2, width - w - 2), R(2, height - h - 2), w, h);
-            if (Grow(r, 2).Overlaps(startZone)) continue;
-            bool clash = false;
-            foreach (var o in rooms) if (Grow(o, 2).Overlaps(r)) { clash = true; break; }
-            if (clash) continue;
-            rooms.Add(r);
-            Carve(r, C.Room);
-        }
-
-        // 통로: 문 밖 → 가장 가까운 방, 그다음 방들끼리 최소 연결(프림) + 고리 몇 개
-        var noise = new float[width, height];
-        for (int x = 0; x < width; x++) for (int y = 0; y < height; y++) noise[x, y] = R01() * 4f;
-
-        int nearest = 0;
-        for (int i = 1; i < rooms.Count; i++)
-            if (Vector2.Distance(rooms[i].center, outsideDoor) < Vector2.Distance(rooms[nearest].center, outsideDoor)) nearest = i;
-        Connect(outsideDoor, rooms[nearest], noise);
-
-        var linked = new List<int> { nearest };
-        var edges = new HashSet<(int, int)>();
-        while (linked.Count < rooms.Count)
-        {
-            float best = float.MaxValue; int a = -1, b = -1;
-            foreach (var i in linked)
-                for (int j = 0; j < rooms.Count; j++)
-                {
-                    if (linked.Contains(j)) continue;
-                    float d = Vector2.Distance(rooms[i].center, rooms[j].center);
-                    if (d < best) { best = d; a = i; b = j; }
-                }
-            Connect(Center(rooms[a]), rooms[b], noise);
-            edges.Add((Mathf.Min(a, b), Mathf.Max(a, b)));
-            linked.Add(b);
-        }
-        int loops = 0;
-        for (int i = 0; i < rooms.Count && loops < 7; i++)
-            for (int j = i + 1; j < rooms.Count && loops < 7; j++)
-                if (!edges.Contains((i, j)) && Vector2.Distance(rooms[i].center, rooms[j].center) < 13f && R01() < 0.3f)
-                {
-                    Connect(Center(rooms[i]), rooms[j], noise);
-                    loops++;
-                }
-
-        // 막다른 길: 통로에서 옆으로 짧게 뻗은 가지 (미로 느낌 + 작은 상자 자리)
-        var corridors = new List<Vector2Int>();
-        for (int x = 0; x < width; x++) for (int y = 0; y < height; y++)
-            if (grid[x, y] == C.Corridor) corridors.Add(new Vector2Int(x, y));
-        for (int n = 0, tries = 0; n < 9 && tries < 120; tries++)
-            if (Spur(Pick(corridors))) n++;
-
+        PlaceRooms();
+        for (int y = 1; y < height - 1; y += 2)
+            for (int x = 1; x < width - 1; x += 2)
+                if (grid[x, y] == C.Solid && !Grow(start.rect, 1).Contains(new Vector2Int(x, y))) GrowMaze(new Vector2Int(x, y));
+        ConnectRegions();
+        TrimDeadEnds();
+        CollectDoors();
         ComputeDistances();
     }
 
-    Vector2Int doorDir;
+    void PlaceRooms()
+    {
+        // 시작 방: 네 모서리 중 한 곳, 5×5
+        int corner = R(0, 4);
+        start = AddRoom(new RectInt((corner & 1) == 0 ? 1 : width - 6, (corner & 2) == 0 ? 1 : height - 6, 5, 5));
+
+        for (int attempt = 0; attempt < 600 && rooms.Count < maxRooms - 1; attempt++)
+        {
+            int w = RoomSize(), h = RoomSize();
+            var r = new RectInt(R(0, (width - w) / 2) * 2 + 1, R(0, (height - h) / 2) * 2 + 1, w, h);
+            if (r.xMax > width - 1 || r.yMax > height - 1) continue;
+            if (Grow(start.rect, 2).Overlaps(r)) continue;   // 시작 방 둘레는 비워 둔다 (거대한 문 하나로만 나가게)
+            bool clash = false;
+            foreach (var o in rooms) if (Grow(o.rect, 1).Overlaps(r)) { clash = true; break; }
+            if (!clash) rooms.Add(AddRoom(r));
+        }
+    }
+
+    int RoomSize() { float v = R01(); return v < 0.45f ? 3 : v < 0.85f ? 5 : 7; }
+
+    Room AddRoom(RectInt r)
+    {
+        var room = new Room { rect = r, region = regionCount++ };
+        for (int x = r.xMin; x < r.xMax; x++)
+            for (int y = r.yMin; y < r.yMax; y++) { grid[x, y] = C.Room; region[x, y] = room.region; }
+        return room;
+    }
 
     static RectInt Grow(RectInt r, int m) => new RectInt(r.x - m, r.y - m, r.width + m * 2, r.height + m * 2);
     static Vector2Int Center(RectInt r) => new Vector2Int(r.x + r.width / 2, r.y + r.height / 2);
 
-    void Carve(RectInt r, C kind)
+    // 빈 홀수 칸에서 시작해 막힐 때까지 두 칸씩 파 나가는 미로 (되돌아가며 갈래를 친다)
+    void GrowMaze(Vector2Int from)
     {
-        for (int x = r.xMin; x < r.xMax; x++) for (int y = r.yMin; y < r.yMax; y++) grid[x, y] = kind;
-    }
-
-    // 시작 방과 그 벽 둘레는 문 말고는 뚫지 않는다
-    bool Forbidden(Vector2Int c) =>
-        c.x <= 0 || c.y <= 0 || c.x >= width - 1 || c.y >= height - 1 ||
-        (Grow(startRoom, 1).Contains(c) && c != doorCell);
-
-    // from에서 room 안 아무 칸까지 구불구불한 통로를 판다 (이미 뚫린 곳은 싸게, 바위는 비싸고 들쭉날쭉하게)
-    void Connect(Vector2Int from, RectInt room, float[,] noise)
-    {
-        var cost = new Dictionary<Vector2Int, float> { [from] = 0f };
-        var prev = new Dictionary<Vector2Int, Vector2Int>();
-        var done = new HashSet<Vector2Int>();
-        var open = new List<Vector2Int> { from };
-        Vector2Int? end = null;
-        var dirs = new[] { Vector2Int.up, Vector2Int.down, Vector2Int.left, Vector2Int.right };
-        while (open.Count > 0)
+        int reg = regionCount++;
+        void Dig(Vector2Int c) { grid[c.x, c.y] = C.Corridor; region[c.x, c.y] = reg; }
+        Dig(from);
+        var stack = new List<Vector2Int> { from };
+        Vector2Int? lastDir = null;
+        while (stack.Count > 0)
         {
-            int bi = 0;
-            for (int i = 1; i < open.Count; i++) if (cost[open[i]] < cost[open[bi]]) bi = i;
-            var cur = open[bi]; open.RemoveAt(bi);
-            if (!done.Add(cur)) continue;
-            if (room.Contains(cur)) { end = cur; break; }
-            foreach (var d in dirs)
+            var cell = stack[stack.Count - 1];
+            var open = new List<Vector2Int>();
+            foreach (var d in Dirs4)
             {
-                var n = cur + d;
-                if (!In(n) || Forbidden(n) || done.Contains(n)) continue;
-                float step = grid[n.x, n.y] != C.Solid ? 1f : 2f + noise[n.x, n.y];
-                float c = cost[cur] + step;
-                if (cost.TryGetValue(n, out var old) && old <= c) continue;
-                cost[n] = c; prev[n] = cur; open.Add(n);
+                var n2 = cell + d * 2;
+                if (n2.x < 1 || n2.y < 1 || n2.x >= width - 1 || n2.y >= height - 1) continue;
+                if (grid[n2.x, n2.y] == C.Solid && !Grow(start.rect, 1).Contains(n2)) open.Add(d);
             }
+            if (open.Count == 0) { stack.RemoveAt(stack.Count - 1); lastDir = null; continue; }
+            var dir = lastDir != null && open.Contains(lastDir.Value) && R01() < straightness ? lastDir.Value : Pick(open);
+            Dig(cell + dir);
+            Dig(cell + dir * 2);
+            stack.Add(cell + dir * 2);
+            lastDir = dir;
         }
-        if (end == null) return;
-        for (var c = end.Value; c != from; c = prev[c])
-            if (grid[c.x, c.y] == C.Solid) grid[c.x, c.y] = C.Corridor;
     }
 
-    // 통로 한 칸에서 바위 쪽으로 3~7칸 뻗는 막다른 길. 다른 길과 붙지 않게 판다.
-    bool Spur(Vector2Int start)
+    // 서로 다른 구역 사이의 벽 한 칸을 뚫어 하나로 잇는다. 시작 방은 딱 한 번만(거대한 문).
+    void ConnectRegions()
     {
-        var dirs = new[] { Vector2Int.up, Vector2Int.down, Vector2Int.left, Vector2Int.right };
-        var dir = Pick(dirs);
-        var path = new List<Vector2Int>();
-        var cur = start;
-        int len = R(3, 8);
-        for (int i = 0; i < len; i++)
-        {
-            if (i > 0 && R01() < 0.3f) dir = R01() < 0.5f ? new Vector2Int(dir.y, -dir.x) : new Vector2Int(-dir.y, dir.x);
-            var n = cur + dir;
-            if (!In(n) || Forbidden(n) || grid[n.x, n.y] != C.Solid || path.Contains(n)) break;
-            // 새 칸 둘레(8칸)에 다른 바닥이 있으면 안 된다 (첫 칸은 출발 칸 둘레의 통로, 이후엔 이번 가지 자신은 괜찮다)
-            bool touches = false;
-            for (int dx = -1; dx <= 1 && !touches; dx++)
-                for (int dy = -1; dy <= 1; dy++)
+        var connectors = new Dictionary<Vector2Int, List<int>>();
+        for (int x = 1; x < width - 1; x++)
+            for (int y = 1; y < height - 1; y++)
+            {
+                if (grid[x, y] != C.Solid) continue;
+                var regs = new List<int>();
+                foreach (var d in Dirs4)
                 {
-                    var m = n + new Vector2Int(dx, dy);
-                    if (m == n || m == cur || path.Contains(m)) continue;
-                    if (path.Count == 0 && GridNav.Distance(m, cur) <= 1) continue;
-                    if (IsFloor(m)) { touches = true; break; }
+                    int r = region[x + d.x, y + d.y];
+                    if (r >= 0 && !regs.Contains(r)) regs.Add(r);
                 }
-            if (touches) break;
-            path.Add(n);
-            cur = n;
+                if (regs.Count >= 2) connectors[new Vector2Int(x, y)] = regs;
+            }
+
+        var merged = new int[regionCount];
+        for (int i = 0; i < regionCount; i++) merged[i] = i;
+        int open = regionCount;
+        var list = new List<Vector2Int>(connectors.Keys);
+        bool startLinked = false;
+
+        while (open > 1 && list.Count > 0)
+        {
+            var con = Pick(list);
+            var regs = connectors[con];
+            bool touchesStart = regs.Contains(start.region);
+            OpenConnector(con, touchesStart);
+            if (touchesStart) startLinked = true;
+
+            // 이어진 구역들을 하나로 합친다
+            int dest = merged[regs[0]];
+            var sources = new List<int>();
+            foreach (var r in regs) if (merged[r] != dest && !sources.Contains(merged[r])) sources.Add(merged[r]);
+            for (int i = 0; i < regionCount; i++) if (sources.Contains(merged[i])) merged[i] = dest;
+            open -= sources.Count;
+
+            // 이제 쓸모없어진 연결 칸 정리 (가끔은 고리로 열어 둔다)
+            list.RemoveAll(c =>
+            {
+                if (c == con) return true;
+                if (GridNav.Distance(c, con) < 2) return true;   // 문이 나란히 붙지 않게
+                var rs = connectors[c];
+                if (startLinked && rs.Contains(start.region)) return true;   // 시작 방 출구는 하나뿐
+                var roots = new HashSet<int>();
+                foreach (var r in rs) roots.Add(merged[r]);
+                if (roots.Count > 1) return false;
+                if (R01() < extraDoorChance && !NextToOpening(c)) OpenConnector(c, false);
+                return true;
+            });
         }
-        if (path.Count < 3) return false;
-        foreach (var c in path) grid[c.x, c.y] = C.Corridor;
-        deadEnds.Add(path[path.Count - 1]);
-        return true;
+    }
+
+    bool NextToOpening(Vector2Int c)
+    {
+        foreach (var d in GridNav.Dirs8) if (At(c + d) == C.Door) return true;
+        return false;
+    }
+
+    void OpenConnector(Vector2Int c, bool giant)
+    {
+        bool byRoom = false;
+        foreach (var d in Dirs4) if (At(c + d) == C.Room) byRoom = true;
+        grid[c.x, c.y] = byRoom ? C.Door : C.Corridor;
+        if (!giant) return;
+        doorCell = c;
+        foreach (var d in Dirs4)
+            if (start.rect.Contains(c - d)) outsideDoor = c + d;   // 시작 방 반대쪽
+    }
+
+    // 막다른 길을 메운다. 무작위로 몇 개만 남기고, 남긴 것도 너무 길면 줄인다.
+    void TrimDeadEnds()
+    {
+        var ends = new List<Vector2Int>();
+        for (int x = 1; x < width - 1; x++)
+            for (int y = 1; y < height - 1; y++)
+            {
+                var c = new Vector2Int(x, y);
+                if (grid[x, y] == C.Corridor && OpenNeighbors(c) <= 1) ends.Add(c);
+            }
+        Shuffle(ends);
+        var keep = new HashSet<Vector2Int>();
+        for (int i = 0; i < ends.Count && keep.Count < keepDeadEnds; i++) keep.Add(ends[i]);
+
+        bool changed = true;
+        while (changed)
+        {
+            changed = false;
+            for (int x = 1; x < width - 1; x++)
+                for (int y = 1; y < height - 1; y++)
+                {
+                    var c = new Vector2Int(x, y);
+                    var t = grid[x, y];
+                    if ((t != C.Corridor && t != C.Door) || keep.Contains(c) || c == doorCell) continue;
+                    if (OpenNeighbors(c) <= 1) { grid[x, y] = C.Solid; changed = true; }
+                }
+        }
+
+        // 남긴 막다른 길: 갈림길까지 거슬러 올라가 길이를 재고, 길면 끝을 메워 줄인다
+        foreach (var tip in keep)
+        {
+            var chain = new List<Vector2Int> { tip };
+            var prev = tip;
+            var cur = tip;
+            while (true)
+            {
+                Vector2Int? next = null;
+                foreach (var d in Dirs4)
+                {
+                    var n = cur + d;
+                    if (n != prev && IsFloor(n)) next = n;
+                }
+                if (next == null || At(next.Value) != C.Corridor || OpenNeighbors(next.Value) != 2) break;
+                prev = cur;
+                cur = next.Value;
+                chain.Add(cur);
+            }
+            int cut = Mathf.Max(0, chain.Count - maxDeadEndLength);
+            for (int i = 0; i < cut; i++) grid[chain[i].x, chain[i].y] = C.Solid;
+            if (chain.Count - cut >= 2) deadEnds.Add(chain[cut]);   // 너무 짧은 건 상자 자리로 안 쓴다
+        }
+    }
+
+    void CollectDoors()
+    {
+        foreach (var r in rooms) r.doors.Clear();
+        for (int x = 1; x < width - 1; x++)
+            for (int y = 1; y < height - 1; y++)
+            {
+                if (grid[x, y] != C.Door) continue;
+                var c = new Vector2Int(x, y);
+                if (c == doorCell) continue;
+                foreach (var r in rooms)
+                    foreach (var d in Dirs4)
+                        if (r.rect.Contains(c + d) && !r.doors.Contains(c)) r.doors.Add(c);
+            }
     }
 
     void ComputeDistances()
@@ -237,7 +326,7 @@ public class FloorGenerator : MonoBehaviour
             foreach (var d in GridNav.Dirs8)
             {
                 var n = c + d;
-                if (!IsFloor(n) || dist.ContainsKey(n) || Grow(startRoom, 1).Contains(n)) continue;
+                if (!IsFloor(n) || dist.ContainsKey(n) || n == doorCell || start.rect.Contains(n)) continue;
                 if (d.x != 0 && d.y != 0 && !(IsFloor(c + new Vector2Int(d.x, 0)) && IsFloor(c + new Vector2Int(0, d.y)))) continue;
                 dist[n] = dist[c] + 1;
                 maxDist = Mathf.Max(maxDist, dist[n]);
@@ -246,15 +335,13 @@ public class FloorGenerator : MonoBehaviour
         }
     }
 
-    // ---- 2. 오브젝트 만들기 ----
-
-    Transform root;
+    // ---- 2. 오브젝트 ----
 
     void BuildObjects()
     {
         root = new GameObject("Generated").transform;
         root.SetParent(transform, false);
-        root.gameObject.SetActive(false);   // 몬스터 레벨 등을 정한 뒤 한꺼번에 깨운다
+        root.gameObject.SetActive(false);   // 몬스터 레벨·문 모양 등을 정한 뒤 한꺼번에 깨운다
 
         var floorRoot = Group("Floors");
         var wallRoot = Group("Walls");
@@ -267,51 +354,76 @@ public class FloorGenerator : MonoBehaviour
             }
 
         PlaceStartRoom();
-        var byDistance = new List<RectInt>(rooms);
+
+        var byDistance = new List<Room>(rooms);
         byDistance.Sort((a, b) => RoomDist(a).CompareTo(RoomDist(b)));
         var firstRoom = byDistance[0];
         var lastRoom = byDistance[byDistance.Count - 1];
+        var midRoom = byDistance[byDistance.Count / 2];
+        if (midRoom == lastRoom && byDistance.Count > 2) midRoom = byDistance[byDistance.Count / 2 - 1];
+
+        // 잠긴 방: 문이 하나뿐인 방 (지나가는 길이 아니라서 잠가도 계단까지 막히지 않는다)
+        var lockable = rooms.FindAll(r => r.doors.Count == 1 && r != firstRoom && r != lastRoom && r != midRoom);
+        Shuffle(lockable);
+        int lockCount = Mathf.Min(lockedRooms, lockable.Count);
+        if (lockCount < 2) lockCount = 0;   // 열쇠가 잠긴 문보다 적어야 하므로 둘 이상일 때만
+        for (int i = 0; i < lockCount; i++) lockable[i].locked = true;
+
+        BuildDoors();
 
         // 계단: 가장 먼 방 한가운데
-        Put(stairs, Center(lastRoom), Quaternion.Euler(0, 90f * R(0, 4), 0));
+        Put(stairs, Center(lastRoom.rect), Quaternion.Euler(0, 90f * R(0, 4), 0));
 
-        // 첫 방: 낡은 횃불이 든 상자 (튜토리얼)
-        var torchChest = Spawn(chestBig, FreeCellIn(firstRoom, true), RandomYaw());
-        if (torchChest != null) torchChest.GetComponent<ChestEvent>().givesTorch = true;
+        // 상자 (방 안 또는 막다른 길 끝에만)
+        var keyChests = new List<ChestEvent>();   // 열쇠를 넣을 수 있는 상자 (잠긴 방 안·횃불 상자 제외)
+        void AddChest(GameObject prefab, Room r, bool torch = false)
+        {
+            var go = Spawn(prefab, FreeCellIn(r.rect, true), RandomYaw());
+            if (go == null) return;
+            var ch = go.GetComponent<ChestEvent>();
+            ch.givesTorch = torch;
+            r.hasChest = true;
+            if (!r.locked && !torch) keyChests.Add(ch);
+        }
+        AddChest(chestBig, firstRoom, true);                              // 첫 방: 낡은 횃불 (튜토리얼)
+        foreach (var r in rooms) if (r.locked) AddChest(chestElite, r);    // 잠긴 방: 엘리트 상자
+        AddChest(chestBig, lastRoom);
+        var others = rooms.FindAll(r => !r.locked && r != firstRoom && r != lastRoom && r != midRoom);
+        Shuffle(others);
+        for (int i = 0; i < Mathf.Min(3, others.Count); i++) AddChest(R01() < 0.5f ? chestBig : chestSmall, others[i]);
+        var tipChests = new List<Vector2Int>();
+        foreach (var d in deadEnds)
+        {
+            if (occupied.Contains(d)) continue;
+            var go = Spawn(chestSmall, d, RandomYaw());
+            if (go != null) { keyChests.Add(go.GetComponent<ChestEvent>()); tipChests.Add(d); }
+        }
+
+        // 열쇠: 잠긴 문보다 하나 적게, 잠기지 않은 상자에 나눠 넣는다
+        Shuffle(keyChests);
+        for (int i = 0; i < Mathf.Max(0, lockCount - 1) && keyChests.Count > 0; i++) keyChests[i % keyChests.Count].keys++;
 
         // 굶주린 고블린: 중간쯤 되는 방
-        var midRoom = byDistance[byDistance.Count / 2];
-        if (midRoom.Equals(lastRoom) && byDistance.Count > 2) midRoom = byDistance[byDistance.Count / 2 - 1];
-        Put(goblin, FreeCellIn(midRoom, true), RandomYaw());
+        Put(goblin, FreeCellIn(midRoom.rect, true), RandomYaw());
 
-        // 상자: 엘리트는 계단 방, 큰 상자 둘은 아무 방, 작은 상자는 막다른 길 끝
-        Spawn(chestElite, FreeCellIn(lastRoom, true), RandomYaw());
-        for (int i = 0; i < 2; i++)
-        {
-            var r = byDistance[R(1, byDistance.Count - 1)];
-            Spawn(chestBig, FreeCellIn(r, true), RandomYaw());
-        }
-        int smalls = 0;
-        foreach (var d in deadEnds)
-            if (smalls < 5 && !occupied.Contains(d)) { Spawn(chestSmall, d, Quaternion.identity); smalls++; }
+        // 벽 횃불 (꺼진 채로)
+        foreach (var r in rooms) if (R01() < 0.6f) PlaceWallTorch(r.rect);
 
-        // 벽 횃불: 시작 방 말고 방마다 하나씩 (꺼진 채로)
-        foreach (var r in rooms) PlaceWallTorch(r);
-
-        // 몬스터: 깊이에 따라 종류·레벨이 달라진다
+        // 몬스터: 상자가 있는 방은 지키는 녀석이 있을 확률이 높다. 깊이에 따라 종류·레벨이 달라진다
         foreach (var r in rooms)
         {
-            if (r.Equals(firstRoom)) continue;   // 첫 방은 숨 돌릴 곳
-            int count = r.width * r.height >= 36 ? 2 : R01() < 0.65f ? 1 : 0;
-            for (int i = 0; i < count; i++) SpawnMonster(FreeCellIn(r, false));
+            if (r == firstRoom) continue;   // 첫 방은 숨 돌릴 곳
+            float chance = r.locked ? 1f : r.hasChest ? 0.8f : 0.3f;
+            if (R01() < chance) SpawnMonster(FreeCellIn(r.rect, false), null, r.locked ? 1 : 0);
+            if (r.hasChest && r.rect.width * r.rect.height >= 25 && R01() < 0.4f) SpawnMonster(FreeCellIn(r.rect, false));
         }
-        // 계단 방 문지기
-        SpawnMonster(FreeCellIn(lastRoom, false), wolf, 2);
-        // 통로에도 몇 마리
+        SpawnMonster(FreeCellIn(lastRoom.rect, false), wolf, 2);   // 계단 방 문지기
+        foreach (var tip in tipChests)   // 막다른 길 상자 앞을 지키는 녀석
+            if (R01() < 0.35f) SpawnMonster(StepBack(tip));
         var corridorCells = new List<Vector2Int>();
         foreach (var kv in dist)
-            if (grid[kv.Key.x, kv.Key.y] == C.Corridor && kv.Value > 8 && !occupied.Contains(kv.Key)) corridorCells.Add(kv.Key);
-        for (int i = 0; i < 4 && corridorCells.Count > 0; i++)
+            if (At(kv.Key) == C.Corridor && kv.Value > 10 && !occupied.Contains(kv.Key)) corridorCells.Add(kv.Key);
+        for (int i = 0; i < 3 && corridorCells.Count > 0; i++)
         {
             var c = Pick(corridorCells);
             corridorCells.Remove(c);
@@ -335,26 +447,51 @@ public class FloorGenerator : MonoBehaviour
         return false;
     }
 
-    int RoomDist(RectInt r) => dist.TryGetValue(Center(r), out var d) ? d : int.MaxValue / 2;
+    int RoomDist(Room r) => dist.TryGetValue(Center(r.rect), out var d) ? d : int.MaxValue / 2;
+
+    // 막다른 길 끝에서 한 칸 안쪽
+    Vector2Int? StepBack(Vector2Int tip)
+    {
+        foreach (var d in Dirs4)
+            if (IsFloor(tip + d) && !occupied.Contains(tip + d)) return tip + d;
+        return null;
+    }
 
     void PlaceStartRoom()
     {
+        var outDir = outsideDoor - doorCell;
         // 거대한 문: 문 칸에 통로 방향으로 세운다
-        Put(giantDoor, doorCell, Quaternion.Euler(0, doorDir.x != 0 ? 90f : 0f, 0));
-        occupied.Add(doorCell);
+        Put(giantDoor, doorCell, Quaternion.Euler(0, outDir.x != 0 ? 90f : 0f, 0));
         occupied.Add(outsideDoor);
 
         // 곡괭이·도끼: 문 바로 안쪽 옆
-        var inside = doorCell - doorDir;
-        var side = new Vector2Int(doorDir.y, doorDir.x);
-        Put(tools, inside + side, Quaternion.LookRotation(new Vector3(-doorDir.x, 0, -doorDir.y)));
+        var inside = doorCell - outDir;
+        var side = new Vector2Int(outDir.y, outDir.x);
+        Put(tools, inside + side, Quaternion.LookRotation(new Vector3(-outDir.x, 0, -outDir.y)));
 
         // 플레이어: 방 가운데, 문 쪽을 보고
-        var p = Center(startRoom) - doorDir;
-        Put(player, p, Quaternion.LookRotation(new Vector3(doorDir.x, 0, doorDir.y)));
+        Put(player, Center(start.rect) - outDir, Quaternion.LookRotation(new Vector3(outDir.x, 0, outDir.y)));
 
         // 문을 나서자마자 "너무 어둡다"
         Put(darkTrigger, outsideDoor, Quaternion.identity);
+    }
+
+    void BuildDoors()
+    {
+        var doorRoot = Group("Doors");
+        foreach (var r in rooms)
+            foreach (var c in r.doors)
+            {
+                if (occupied.Contains(c)) continue;   // 방 두 개 사이의 문은 한 번만
+                occupied.Add(c);
+                bool alongX = IsFloor(c + Vector2Int.left) && IsFloor(c + Vector2Int.right);
+                int toRoom = alongX ? (r.rect.Contains(c + Vector2Int.right) ? 1 : -1) : (r.rect.Contains(c + Vector2Int.up) ? 1 : -1);
+                var go = new GameObject("Door");
+                go.transform.SetParent(doorRoot, false);
+                go.transform.position = GridTile.CellToWorld(c);
+                var door = go.AddComponent<Door>();
+                door.Build(r.locked || R01() < ironDoorChance ? Door.Kind.Iron : Door.Kind.Wood, r.locked, alongX, toRoom);
+            }
     }
 
     void Put(Transform t, Vector2Int? cell, Quaternion rot)
@@ -373,23 +510,26 @@ public class FloorGenerator : MonoBehaviour
 
     Quaternion RandomYaw() => Quaternion.Euler(0, 90f * R(0, 4), 0);
 
-    // 방 안의 빈 칸. edge면 벽에 붙은 칸을 고르되, 통로 입구는 막지 않는다
+    // 방 안의 빈 칸. edge면 벽에 붙은 칸을 고르되, 문 앞은 막지 않는다
     Vector2Int? FreeCellIn(RectInt r, bool edge)
     {
         var cand = new List<Vector2Int>();
+        var any = new List<Vector2Int>();
         for (int x = r.xMin; x < r.xMax; x++)
             for (int y = r.yMin; y < r.yMax; y++)
             {
                 var c = new Vector2Int(x, y);
                 if (occupied.Contains(c) || BlocksEntrance(c, r)) continue;
+                any.Add(c);
                 bool onEdge = x == r.xMin || y == r.yMin || x == r.xMax - 1 || y == r.yMax - 1;
-                if (edge == onEdge || r.width <= 3 || r.height <= 3) cand.Add(c);
+                if (edge == onEdge) cand.Add(c);
             }
-        if (cand.Count == 0) return null;
-        return Pick(cand);
+        if (cand.Count > 0) return Pick(cand);
+        if (any.Count > 0) return Pick(any);
+        return null;
     }
 
-    // 방 둘레 바깥의 통로와 맞닿은 칸(입구)과 그 옆은 비워 둔다
+    // 방 밖의 바닥(문·통로)과 맞닿은 칸은 비워 둔다
     bool BlocksEntrance(Vector2Int c, RectInt r)
     {
         foreach (var d in GridNav.Dirs8)
@@ -400,7 +540,7 @@ public class FloorGenerator : MonoBehaviour
         return false;
     }
 
-    GameObject SpawnMonster(Vector2Int? cell, GameObject kind = null, int level = 0)
+    GameObject SpawnMonster(Vector2Int? cell, GameObject kind = null, int levelBonus = 0)
     {
         if (cell == null || !dist.TryGetValue(cell.Value, out var d)) return null;
         float depth = maxDist > 0 ? (float)d / maxDist : 0f;
@@ -410,7 +550,7 @@ public class FloorGenerator : MonoBehaviour
             else if (depth < 0.7f) kind = Pick(new[] { rat, bat, slime });
             else kind = R01() < 0.55f ? wolf : slime;
         }
-        if (level == 0) level = 1 + (depth > 0.6f && R01() < 0.5f ? 1 : 0);
+        int level = kind == wolf && levelBonus >= 2 ? levelBonus : 1 + (depth > 0.6f && R01() < 0.5f ? 1 : 0) + levelBonus;
         var go = Spawn(kind, cell, Quaternion.Euler(0, R(0, 360), 0));
         if (go != null) go.GetComponent<Monster>().level = level;   // 아직 잠든 상태(Awake 전)라 능력치에 반영된다
         return go;
@@ -420,13 +560,12 @@ public class FloorGenerator : MonoBehaviour
     {
         if (wallTorchPrefab == null) return;
         var options = new List<(Vector2Int cell, Vector2Int wall)>();
-        var dirs = new[] { Vector2Int.up, Vector2Int.down, Vector2Int.left, Vector2Int.right };
         for (int x = r.xMin; x < r.xMax; x++)
             for (int y = r.yMin; y < r.yMax; y++)
             {
                 var c = new Vector2Int(x, y);
                 if (occupied.Contains(c) || BlocksEntrance(c, r)) continue;
-                foreach (var d in dirs)
+                foreach (var d in Dirs4)
                     if (!IsFloor(c + d)) options.Add((c, d));
             }
         if (options.Count == 0) return;
@@ -439,15 +578,17 @@ public class FloorGenerator : MonoBehaviour
     // 이전 회차의 뼈: 지난 자리가 이번 미로에서도 바닥이면 그대로, 아니면 아무 방에 (회차마다 같은 방식으로)
     public Vector2Int PlaceBones(Vector2Int lastCell, int run)
     {
-        if (IsFloor(lastCell) && !Grow(startRoom, 1).Contains(lastCell) && !occupied.Contains(lastCell)) return lastCell;
+        if (At(lastCell) == C.Room || At(lastCell) == C.Corridor)
+            if (!Grow(start.rect, 1).Contains(lastCell) && !occupied.Contains(lastCell)) return lastCell;
         var r = new System.Random(Seed ^ (run * 7919));
         for (int i = 0; i < 50; i++)
         {
             var room = rooms[r.Next(rooms.Count)];
-            var c = new Vector2Int(r.Next(room.xMin, room.xMax), r.Next(room.yMin, room.yMax));
+            if (room.locked) continue;
+            var c = new Vector2Int(r.Next(room.rect.xMin, room.rect.xMax), r.Next(room.rect.yMin, room.rect.yMax));
             if (!occupied.Contains(c)) return c;
         }
-        return Center(rooms[0]);
+        return Center(rooms[0].rect);
     }
 
     // 디버그용: 지형을 글자로
@@ -459,7 +600,9 @@ public class FloorGenerator : MonoBehaviour
             for (int x = 0; x < width; x++)
             {
                 var c = new Vector2Int(x, y);
-                sb.Append(c == doorCell ? 'D' : grid[x, y] == C.Room ? '.' : grid[x, y] == C.Corridor ? ',' : TouchesFloor(c) ? '#' : ' ');
+                var d = Door.At(c);
+                sb.Append(c == doorCell ? 'G' : d != null ? (d.locked ? 'L' : d.kind == Door.Kind.Iron ? 'I' : 'W')
+                    : grid[x, y] == C.Room ? '.' : grid[x, y] == C.Corridor ? ',' : grid[x, y] == C.Door ? '+' : '#');
             }
             sb.Append('\n');
         }

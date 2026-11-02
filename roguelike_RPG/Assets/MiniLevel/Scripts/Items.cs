@@ -47,6 +47,11 @@ public static class Items
         id = "tunic", name = "누더기 튜닉", kind = ItemKind.Equipment, slot = EquipSlot.Top,
         desc = "해지고 기운 천 튜닉에 밧줄 허리띠.\n눈을 떴을 때 입고 있던 유일한 옷.",
     };
+    public static readonly ItemDef Key = new ItemDef
+    {
+        id = "key", name = "녹슨 열쇠", kind = ItemKind.Tool, stackable = true,
+        desc = "상자 바닥에서 나온 묵직한 열쇠.\n잠긴 철문 하나를 열 수 있다. 한 번 쓰면 자물쇠에 박혀 빠지지 않는다.",
+    };
 }
 
 // 가방(칸 수 제한) + 장착 중인 장비

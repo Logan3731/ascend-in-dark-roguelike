@@ -9,6 +9,7 @@ public class ChestEvent : Interactable
 
     public Tier tier = Tier.Big;
     public bool givesTorch;          // 미로 입구의 첫 상자: 낡은 횃불 + 튜토리얼 문구
+    public int keys;                 // 잠긴 문 열쇠 (미로를 만들 때 정해진다)
     public Transform lid;            // 경첩(뒤쪽 위 모서리)이 원점인 뚜껑
     public float openAngle = 110f;
 
@@ -72,6 +73,7 @@ public class ChestEvent : Interactable
         if (torch) { player.GiveTorch(); got.Add("낡은 횃불"); }
         if (food > 0) { player.AddFood(food); got.Add($"식량 {food}"); }
         if (gold > 0) { player.AddGold(gold); got.Add($"골드 {gold}"); }
+        if (keys > 0) { player.Bag.Add(Items.Key, keys); got.Add(keys > 1 ? $"녹슨 열쇠 {keys}" : "녹슨 열쇠"); }
         GameLog.Add($"얻었다: {string.Join(", ", got)}", GameLog.Good);
         return got;
     }
