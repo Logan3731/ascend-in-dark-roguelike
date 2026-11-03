@@ -32,9 +32,9 @@ public class GridClickMover : MonoBehaviour
     const float TurnPortion = 0.3f;   // 한 칸 걷는 시간 중 몸을 돌리는 데 쓰는 비율
 
     // 이동·공격·연출이 다 끝나야 다음 행동을 받는다
-    bool Busy => stepping || Time.time < TurnResolver.BusyUntil;
+    bool Busy => stepping || Time.time < TurnResolver.BusyUntil || Potions.PlayerAsleep;
     bool HasGoal => goalCell != null || goalTarget != null;
-    static bool Blocked => DialogUI.IsOpen || InventoryUI.IsOpen || PauseMenu.IsOpen || TitleScreen.IsOpen || Minimap.FullOpen || CraftUI.IsOpen || ShopUI.IsOpen;
+    static bool Blocked => DialogUI.IsOpen || InventoryUI.IsOpen || PauseMenu.IsOpen || TitleScreen.IsOpen || CraftUI.IsOpen || ShopUI.IsOpen;
 
     static GridClickMover instance;
     void Awake() => instance = this;
@@ -133,7 +133,14 @@ public class GridClickMover : MonoBehaviour
             }
         }
 
-        // 벽 콜라이더에 막히지 않도록 바닥 높이의 평면과 교차한 지점으로 칸을 정한다.
+        // 벽을 눌렀으면 벽 너머로 돌아가지 않는다: 그 자리에 빨간 표시만
+        if (Physics.Raycast(ray, out var first, 500f) && first.collider.GetComponentInParent<WallTile>() != null)
+        {
+            ShowBlocked(GridTile.WorldToCell(first.collider.transform.position));
+            return;
+        }
+
+        // 바닥 높이의 평면과 교차한 지점으로 칸을 정한다.
         var ground = new Plane(Vector3.up, Vector3.zero);
         if (!ground.Raycast(ray, out float enter)) return;
         var cell = GridTile.WorldToCell(ray.GetPoint(enter));
@@ -146,7 +153,8 @@ public class GridClickMover : MonoBehaviour
             ShowMarker(cell);
             return;
         }
-        SetDestination(cell);   // 밟을 수 있는 칸의 사물(뼈·벽 횃불·계단 등)은 도착하면 상호작용
+        // 밟을 수 있는 칸의 사물(뼈·벽 횃불·계단 등)은 도착하면 상호작용. 갈 수 없는 칸(어둠·벽·막힌 곳)이면 빨간 표시
+        if (!SetDestination(cell)) ShowBlocked(cell);
     }
 
     // 그 칸에 있는 상호작용 대상 (밟으면 저절로 발동하는 것·열린 문은 빼고)
@@ -176,7 +184,71 @@ public class GridClickMover : MonoBehaviour
         var cell = GridTile.WorldToCell(ray.GetPoint(enter));
         if (cell == lastHoldCell) return;   // 커서가 다른 칸으로 옮겨 갔을 때만 길을 다시 찾는다
         lastHoldCell = cell;
-        SetDestination(cell);
+        if (!SetDestination(cell)) ShowBlocked(cell);
+    }
+
+    // ---- 갈 수 없는 곳을 눌렀을 때: 그 칸에 빨간 테두리가 잠깐 떴다 사라진다 ----
+
+    GameObject blockedMarker;
+    Material blockedMat;
+    Renderer[] blockedRenderers;
+    float[] blockedAlpha;        // 처음 투명도 (사라지는 도중에 다시 눌러도 원래대로 시작하게)
+    Coroutine blockedFade;
+
+    void ShowBlocked(Vector2Int cell)
+    {
+        if (blockedMarker == null) BuildBlockedMarker();
+        blockedMarker.transform.position = GridTile.CellToWorld(cell) + Vector3.up * 0.05f;
+        blockedMarker.SetActive(true);
+        if (blockedFade != null) StopCoroutine(blockedFade);
+        blockedFade = StartCoroutine(FadeBlocked());
+    }
+
+    void BuildBlockedMarker()
+    {
+        blockedMarker = new GameObject("BlockedMarker");
+        blockedMat = new Material(Shader.Find("Sprites/Default"));
+        float s = GridTile.CellSize * 0.92f, t = 0.28f;   // 칸 크기, 테두리 두께
+        void Quad(Vector3 pos, Vector3 scale, float alpha)
+        {
+            var q = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            Destroy(q.GetComponent<Collider>());
+            q.transform.SetParent(blockedMarker.transform, false);
+            q.transform.localPosition = pos;
+            q.transform.localRotation = Quaternion.Euler(90, 0, 0);
+            q.transform.localScale = scale;
+            var m = new Material(blockedMat) { color = new Color(1f, 0.12f, 0.08f, alpha) };
+            q.GetComponent<Renderer>().material = m;
+        }
+        Quad(Vector3.zero, new Vector3(s, s, 1), 0.18f);                          // 옅은 채움
+        Quad(new Vector3(0, 0.01f, (s - t) / 2), new Vector3(s, t, 1), 0.85f);    // 테두리 네 변
+        Quad(new Vector3(0, 0.01f, -(s - t) / 2), new Vector3(s, t, 1), 0.85f);
+        Quad(new Vector3((s - t) / 2, 0.01f, 0), new Vector3(t, s, 1), 0.85f);
+        Quad(new Vector3(-(s - t) / 2, 0.01f, 0), new Vector3(t, s, 1), 0.85f);
+        blockedRenderers = blockedMarker.GetComponentsInChildren<Renderer>();
+        blockedAlpha = new float[blockedRenderers.Length];
+        for (int i = 0; i < blockedRenderers.Length; i++) blockedAlpha[i] = blockedRenderers[i].material.color.a;
+    }
+
+    void SetBlockedAlpha(float k)
+    {
+        for (int i = 0; i < blockedRenderers.Length; i++)
+        {
+            var c = blockedRenderers[i].material.color;
+            c.a = blockedAlpha[i] * k;
+            blockedRenderers[i].material.color = c;
+        }
+    }
+
+    IEnumerator FadeBlocked()
+    {
+        for (float t = 0f; t < 1f; t += Time.deltaTime / 0.6f)
+        {
+            SetBlockedAlpha(t < 0.5f ? 1f : 1f - (t - 0.5f) * 2f);   // 잠깐 그대로 있다가 사라진다
+            yield return null;
+        }
+        blockedMarker.SetActive(false);
+        blockedFade = null;
     }
 
     public bool SetDestination(Vector2Int goal)

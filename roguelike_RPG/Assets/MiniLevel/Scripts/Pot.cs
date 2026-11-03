@@ -1,11 +1,14 @@
 using System.Collections;
 using UnityEngine;
 
-// 낡은 항아리. 다가가서 깨면(한 턴) 무엇이 나올지 모른다 — 대개 빈 것, 가끔 식량·물약·골드·돌, 드물게 쥐가 튀어나온다.
+// 낡은 항아리. 다가가서 깨면(한 턴) 무엇이 나올지 모른다 — 골드·식량·물약·돌, 가끔 빈 것, 드물게 쥐가 튀어나온다.
 // 탐험하는 동안 "깨 볼까?"가 자주 생기게 하는 작은 보상 (Darkness Survival의 항아리·풀숲 뒤지기에서 따옴).
+// 깨면 거의 언제나 무언가 나와야 "방마다 눌러 볼 것"이 보상이 된다.
 [RequireComponent(typeof(GridBlocker))]
 public class Pot : Interactable
 {
+    public bool neverEmpty;   // 튜토리얼 항아리: 빈 것·쥐가 나오지 않는다
+
     public override void Interact(PlayerStats player)
     {
         if (Used) return;
@@ -26,12 +29,12 @@ public class Pot : Interactable
 
     void Roll(PlayerStats player, Vector2Int cell)
     {
-        float r = Random.value;
-        if (r < 0.35f) GameLog.Add("항아리를 깼다. 텅 비어 있다.", GameLog.Info);
-        else if (r < 0.55f) { player.AddFood(1); Found(player, "식량"); }
-        else if (r < 0.72f) { var p = Potions.RandomPotion(); player.Bag.Add(p); Found(player, p.name); }
-        else if (r < 0.84f) { int g = Random.Range(4, 10); player.AddGold(g); Found(player, $"골드 {g}"); }
-        else if (r < 0.94f) { player.Bag.Add(Items.Stone, 2); Found(player, "돌멩이 2"); }
+        float r = neverEmpty ? Random.Range(0.12f, 0.9f) : Random.value;
+        if (r < 0.12f) GameLog.Add("항아리를 깼다. 텅 비어 있다.", GameLog.Info);
+        else if (r < 0.32f) { player.AddFood(1); Found(player, "식량"); }
+        else if (r < 0.52f) { var p = Potions.RandomPotion(); player.Bag.Add(p); Found(player, p.name); }
+        else if (r < 0.78f) { int g = Random.Range(8, 21); player.AddGold(g); Found(player, $"골드 {g}"); }
+        else if (r < 0.9f) { player.Bag.Add(Items.Stone, 2); Found(player, "돌멩이 2"); }
         else
         {
             GameLog.Add("항아리를 깨자 쥐가 튀어나왔다!", GameLog.Bad);

@@ -15,14 +15,15 @@ public class FloorGenerator : MonoBehaviour
 {
     public static FloorGenerator Instance { get; private set; }
 
+    // 작고 군더더기 없는 미로: 방마다 무언가 있고, 방과 방 사이 통로는 짧고 곧게.
     [Header("크기 (홀수)")]
-    public int width = 41, height = 41;
-    public int maxRooms = 16;
-    public int keepDeadEnds = 8;        // 남길 막다른 길 (끝에 상자)
-    public int maxDeadEndLength = 7;    // 남긴 막다른 길이 너무 길면 이만큼으로 줄인다
-    [Range(0f, 0.3f)] public float extraDoorChance = 0.12f;   // 고리를 만드는 여분의 문
-    [Range(0f, 1f)] public float straightness = 0.4f;          // 통로가 곧게 이어질 확률 (낮을수록 구불구불)
-    public int lockedRooms = 3;
+    public int mazeWidth = 21, mazeHeight = 21;
+    public int roomCount = 8;
+    public int keepDeadEnds = 3;        // 남길 막다른 길 (끝에 상자)
+    public int maxDeadEndLength = 4;    // 남긴 막다른 길이 너무 길면 이만큼으로 줄인다
+    [Range(0f, 0.3f)] public float extraDoorChance = 0.03f;   // 고리를 만드는 여분의 문
+    [Range(0f, 1f)] public float straightness = 0.75f;         // 통로가 곧게 이어질 확률 (낮을수록 구불구불)
+    public int lockedRooms = 2;
     [Range(0f, 1f)] public float ironDoorChance = 0.3f;
     public int seed;   // 0이면 매번 무작위
 
@@ -36,10 +37,10 @@ public class FloorGenerator : MonoBehaviour
     public GameObject bookshelfPrefab, coffinPrefab, wellPrefab;
 
     [Header("배치 수")]
-    public int wallTorches = 12;
-    public int branches = 14, stones = 10;
-    public int pots = 16;
-    public int bookshelves = 4, coffins = 3, wells = 2, secretRooms = 2;
+    public int wallTorches = 7;
+    public int branches = 8, stones = 6;
+    public int pots = 9;
+    public int bookshelves = 2, coffins = 2, wells = 1, secretRooms = 1;
 
     [Header("씬에 있는 것 (위치만 옮긴다)")]
     public Transform player;
@@ -52,6 +53,8 @@ public class FloorGenerator : MonoBehaviour
     public int Seed { get; private set; }
 
     enum C { Solid, Room, Corridor, Door }
+
+    int width, height;
 
     class Room
     {
@@ -75,16 +78,22 @@ public class FloorGenerator : MonoBehaviour
     int maxDist;
     Vector2Int doorCell, outsideDoor;
     Transform root;
+    readonly Dictionary<Vector2Int, GameObject> floorTiles = new Dictionary<Vector2Int, GameObject>();   // 시야(FogOfWar)가 쓴다
+    readonly Dictionary<Vector2Int, GameObject> wallTiles = new Dictionary<Vector2Int, GameObject>();
 
     void Awake()
     {
         Instance = this;
+        width = mazeWidth;
+        height = mazeHeight;
         Seed = seed != 0 ? seed : System.Environment.TickCount;
         rng = new System.Random(Seed);
         Potions.NewRun(Seed);   // 물약 색과 효과의 짝을 새로 섞는다
         Generate();
         BuildObjects();
         GridNav.Invalidate();
+        // 시야: 벽(낮은 벽 포함)과 닫힌 문이 시야를 막는다
+        gameObject.AddComponent<FogOfWar>().Init(floorTiles, wallTiles, c => At(c) == C.Solid, new[] { giantDoor });
         Debug.Log($"[1층 생성] seed={Seed} 방 {rooms.Count + 1}개, 바닥 {CountFloors()}칸, 막다른 길 {deadEnds.Count}개, 잠긴 방 {rooms.FindAll(r => r.locked).Count}개, 가장 먼 방까지 {maxDist}걸음");
     }
 
@@ -133,7 +142,7 @@ public class FloorGenerator : MonoBehaviour
         int corner = R(0, 4);
         start = AddRoom(new RectInt((corner & 1) == 0 ? 1 : width - 6, (corner & 2) == 0 ? 1 : height - 6, 5, 5));
 
-        for (int attempt = 0; attempt < 600 && rooms.Count < maxRooms - 1; attempt++)
+        for (int attempt = 0; attempt < 600 && rooms.Count < roomCount - 1; attempt++)
         {
             int w = RoomSize(), h = RoomSize();
             var r = new RectInt(R(0, (width - w) / 2) * 2 + 1, R(0, (height - h) / 2) * 2 + 1, w, h);
@@ -145,7 +154,7 @@ public class FloorGenerator : MonoBehaviour
         }
     }
 
-    int RoomSize() { float v = R01(); return v < 0.45f ? 3 : v < 0.85f ? 5 : 7; }
+    int RoomSize() { float v = R01(); return v < 0.5f ? 3 : v < 0.9f ? 5 : 7; }
 
     Room AddRoom(RectInt r)
     {
@@ -359,48 +368,67 @@ public class FloorGenerator : MonoBehaviour
             for (int y = 0; y < height; y++)
             {
                 var c = new Vector2Int(x, y);
-                if (IsFloor(c)) Instantiate(floorPrefab, GridTile.CellToWorld(c), Quaternion.identity, floorRoot);
-                else if (TouchesFloor(c)) Instantiate(wallPrefab, GridTile.CellToWorld(c), Quaternion.identity, wallRoot);
+                if (IsFloor(c)) floorTiles[c] = Instantiate(floorPrefab, GridTile.CellToWorld(c), Quaternion.identity, floorRoot);
+                else if (TouchesFloor(c)) wallTiles[c] = BuildWall(c, wallRoot);
             }
 
         PlaceStartRoom();
 
+        // ---- 튜토리얼 순서: 문에서 가까운 방부터 하나씩 배우게 채운다 ----
+        // 시작 방(항아리·재료·모루) → 첫 방(횃불 상자·잠든 쥐) → 물약 방(책장·잠든 슬라임) → 상인 방(고블린·우물)
+        // → 열쇠 방(열쇠 상자·관) → 잠긴 방(엘리트 상자) → 계단 방(늑대 문지기). 방마다 처음 들어서면 안내가 한 번 뜬다.
         var byDistance = new List<Room>(rooms);
         byDistance.Sort((a, b) => RoomDist(a).CompareTo(RoomDist(b)));
         var firstRoom = byDistance[0];
         var lastRoom = byDistance[byDistance.Count - 1];
-        var midRoom = byDistance[byDistance.Count / 2];
-        if (midRoom == lastRoom && byDistance.Count > 2) midRoom = byDistance[byDistance.Count / 2 - 1];
 
-        // 잠긴 방: 문이 하나뿐인 방 (지나가는 길이 아니라서 잠가도 계단까지 막히지 않는다)
-        var lockable = rooms.FindAll(r => r.doors.Count == 1 && r != firstRoom && r != lastRoom && r != midRoom);
-        Shuffle(lockable);
+        // 잠긴 방: 문이 하나뿐인 방 (지나가는 길이 아니라서 잠가도 계단까지 막히지 않는다).
+        // 튜토리얼 방(가까운 셋)은 빼고 먼 쪽부터 — 열쇠를 먼저 얻은 뒤에 만나게
+        var lockable = byDistance.FindAll(r => r.doors.Count == 1 && r != firstRoom && r != lastRoom && byDistance.IndexOf(r) > 3);
+        if (lockable.Count < 2) lockable = byDistance.FindAll(r => r.doors.Count == 1 && r != firstRoom && r != lastRoom);
+        lockable.Reverse();
         int lockCount = Mathf.Min(lockedRooms, lockable.Count);
         if (lockCount < 2) lockCount = 0;   // 열쇠가 잠긴 문보다 적어야 하므로 둘 이상일 때만
         for (int i = 0; i < lockCount; i++) lockable[i].locked = true;
+
+        var lessons = byDistance.FindAll(r => r != firstRoom && r != lastRoom && !r.locked);
+        Room potionRoom = lessons.Count > 0 ? lessons[0] : null;
+        Room shopRoom = lessons.Count > 1 ? lessons[1] : firstRoom;
+        Room keyRoom = lessons.Count > 2 ? lessons[2] : null;
 
         BuildDoors();
 
         // 계단: 가장 먼 방 한가운데
         Put(stairs, Center(lastRoom.rect), Quaternion.Euler(0, 90f * R(0, 4), 0));
 
+        // 시작 방: 반드시 무언가 나오는 항아리 하나 + 나뭇가지 둘·돌멩이 하나 → 깨 보고, 줍고, 모루에서 만들어 보게
+        var startPot = FreeBackWallCell(start.rect);
+        if (startPot != null) SpawnPot(startPot.Value, true);
+        for (int i = 0; i < 3; i++)
+        {
+            var c = FreeCellIn(start.rect, false);
+            if (c != null) SpawnPickup(i < 2 ? "branch" : "stone", i < 2 ? branchPrefab : stonePrefab, c.Value);
+        }
+
         // 상자 (방 안 또는 막다른 길 끝에만)
         var keyChests = new List<ChestEvent>();   // 열쇠를 넣을 수 있는 상자 (잠긴 방 안·횃불 상자 제외)
-        void AddChest(GameObject prefab, Room r, bool torch = false)
+        ChestEvent AddChest(GameObject prefab, Room r, bool torch = false)
         {
             var go = Spawn(prefab, FreeCellIn(r.rect, true), RandomYaw());
-            if (go == null) return;
+            if (go == null) return null;
             var ch = go.GetComponent<ChestEvent>();
             ch.givesTorch = torch;
             r.hasChest = true;
             if (!r.locked && !torch) keyChests.Add(ch);
+            return ch;
         }
         AddChest(chestBig, firstRoom, true);                              // 첫 방: 낡은 횃불 (튜토리얼)
         foreach (var r in rooms) if (r.locked) AddChest(chestElite, r);    // 잠긴 방: 엘리트 상자
         AddChest(chestBig, lastRoom);
-        var others = rooms.FindAll(r => !r.locked && r != firstRoom && r != lastRoom && r != midRoom);
+        var keyChest = keyRoom != null ? AddChest(chestSmall, keyRoom) : null;
+        var others = rooms.FindAll(r => !r.locked && r != firstRoom && r != lastRoom && r != shopRoom && r != keyRoom);
         Shuffle(others);
-        for (int i = 0; i < Mathf.Min(3, others.Count); i++) AddChest(R01() < 0.5f ? chestBig : chestSmall, others[i]);
+        for (int i = 0; i < Mathf.Min(2, others.Count); i++) AddChest(R01() < 0.5f ? chestBig : chestSmall, others[i]);
         var tipChests = new List<Vector2Int>();
         foreach (var d in deadEnds)
         {
@@ -409,20 +437,28 @@ public class FloorGenerator : MonoBehaviour
             if (go != null) { keyChests.Add(go.GetComponent<ChestEvent>()); tipChests.Add(d); }
         }
 
-        // 열쇠: 잠긴 문보다 하나 적게, 잠기지 않은 상자에 나눠 넣는다
-        Shuffle(keyChests);
-        for (int i = 0; i < Mathf.Max(0, lockCount - 1) && keyChests.Count > 0; i++) keyChests[i % keyChests.Count].keys++;
+        // 열쇠: 잠긴 문보다 하나 적게. 튜토리얼 열쇠 방의 상자에 넣는다 (없으면 아무 잠기지 않은 상자에)
+        int keyCount = Mathf.Max(0, lockCount - 1);
+        if (keyChest != null) keyChest.keys = keyCount;
+        else
+        {
+            Shuffle(keyChests);
+            for (int i = 0; i < keyCount && keyChests.Count > 0; i++) keyChests[i % keyChests.Count].keys++;
+        }
 
-        // 굶주린 고블린: 중간쯤 되는 방
-        Put(goblin, FreeCellIn(midRoom.rect, true), RandomYaw());
+        // 굶주린 고블린: 상인 방
+        Put(goblin, FreeCellIn(shopRoom.rect, true), RandomYaw());
 
         // 벽 횃불 (꺼진 채로): 가장 많은 바닥을 밝힐 수 있는 자리에
         PlaceWallTorches(wallTorches);
 
-        // 몬스터: 상자가 있는 방은 지키는 녀석이 있을 확률이 높다. 깊이에 따라 종류·레벨이 달라진다
+        // 몬스터: 첫 방엔 잠든 쥐(기습 배우기), 물약 방엔 잠든 슬라임(불에 약하다 — 던져 보기), 상인 방은 안전.
+        // 나머지는 상자가 있는 방일수록 지키는 녀석이 있다. 깊이에 따라 종류·레벨이 달라진다
+        SpawnMonster(FreeCellIn(firstRoom.rect, false), rat, 0, 1f);
+        if (potionRoom != null) SpawnMonster(FreeCellIn(potionRoom.rect, false), slime, 0, 1f);
         foreach (var r in rooms)
         {
-            if (r == firstRoom) continue;   // 첫 방은 숨 돌릴 곳
+            if (r == firstRoom || r == potionRoom || r == shopRoom) continue;
             float chance = r.locked ? 1f : r.hasChest ? 0.8f : 0.3f;
             if (R01() < chance) SpawnMonster(FreeCellIn(r.rect, false), null, r.locked ? 1 : 0);
             if (r.hasChest && r.rect.width * r.rect.height >= 25 && R01() < 0.4f) SpawnMonster(FreeCellIn(r.rect, false));
@@ -433,11 +469,24 @@ public class FloorGenerator : MonoBehaviour
         var corridorCells = new List<Vector2Int>();
         foreach (var kv in dist)
             if (At(kv.Key) == C.Corridor && kv.Value > 10 && !occupied.Contains(kv.Key)) corridorCells.Add(kv.Key);
-        for (int i = 0; i < 3 && corridorCells.Count > 0; i++)
+        for (int i = 0; i < 2 && corridorCells.Count > 0; i++)
         {
             var c = Pick(corridorCells);
             corridorCells.Remove(c);
             SpawnMonster(c, null, 0, 0f);   // 통로를 떠도는 녀석은 깨어 있다
+        }
+
+        // 방 소품: 책장은 물약 방, 관은 열쇠 방, 우물은 상인 방에 먼저 (나머지는 무작위), 그리고 숨겨진 방
+        PlaceProps<Bookshelf>(bookshelfPrefab, bookshelves, true, potionRoom);
+        PlaceProps<Coffin>(coffinPrefab, coffins, true, keyRoom);
+        PlaceProps<Well>(wellPrefab, wells, false, shopRoom);
+        BuildSecretRooms();
+
+        // 물약 방: 반드시 무언가 나오는 항아리 하나 (물약을 일찍 손에 쥐게)
+        if (potionRoom != null)
+        {
+            var c = FreeCellIn(potionRoom.rect, true);
+            if (c != null) SpawnPot(c.Value, true);
         }
 
         // 재료: 미로 곳곳에 나뭇가지·돌멩이 (밟으면 줍는다)
@@ -447,11 +496,25 @@ public class FloorGenerator : MonoBehaviour
         // 항아리: 방 가장자리에 (깨 보면 무언가 나올지도)
         ScatterPots(pots + R(-3, 4));
 
-        // 방 소품: 책장·관(벽에 붙여)·우물(가운데 쪽), 그리고 숨겨진 방
-        PlaceProps<Bookshelf>(bookshelfPrefab, bookshelves, true);
-        PlaceProps<Coffin>(coffinPrefab, coffins, true);
-        PlaceProps<Well>(wellPrefab, wells, false);
-        BuildSecretRooms();
+        // 방마다 눌러 볼 것이 하나는 있게: 아무것도 없는 방엔 항아리
+        foreach (var r in rooms)
+        {
+            bool any = false;
+            for (int x = r.rect.xMin; x < r.rect.xMax && !any; x++)
+                for (int y = r.rect.yMin; y < r.rect.yMax && !any; y++)
+                    if (occupied.Contains(new Vector2Int(x, y))) any = true;
+            if (any) continue;
+            var c = FreeCellIn(r.rect, true);
+            if (c != null) SpawnPot(c.Value, false);
+        }
+
+        // 안내 (한 번 본 것은 다음 회차에 다시 뜨지 않는다)
+        AddHint("start", start.rect, "항아리·상자는 클릭하면 다가가서 연다. 바닥의 나뭇가지·돌멩이는 밟으면 줍고, 방 구석의 모루에서 무기·횃불을 만들 수 있다.");
+        AddHint("first", firstRoom.rect, "상자를 열어 보자. 잠든 적에게 몰래 다가가 먼저 때리면 기습(세 배)! 싸울 때 [Q]를 누르면 다음 공격이 강타가 된다.");
+        if (potionRoom != null) AddHint("potion", potionRoom.rect, "물약은 마셔 보거나 적에게 던질 수 있다 (소지품 [I]에서 클릭). 책장을 뒤지면 물약의 정체를 알 수도 있다.");
+        if (shopRoom != firstRoom) AddHint("shop", shopRoom.rect, "고블린 상인에게 골드로 물건을 살 수 있다. 우물에 동전을 던져 보는 것도 방법이다.");
+        if (keyRoom != null && keyCount > 0) AddHint("key", keyRoom.rect, "이 방의 상자에 녹슨 열쇠가 들어 있다. 잠긴 철문 하나를 열 수 있다 — 어느 문을 열지는 당신의 몫.");
+        AddHint("stairs", lastRoom.rect, "위로 오르는 계단이다! 계단을 클릭하면 이 층을 벗어난다.");
 
         root.gameObject.SetActive(true);
     }
@@ -461,6 +524,53 @@ public class FloorGenerator : MonoBehaviour
         var t = new GameObject(name).transform;
         t.SetParent(root, false);
         return t;
+    }
+
+    // ---- 벽 (Darkness Survival처럼) ----
+    // 카메라는 -x·-z 쪽에서 +x·+z 쪽을 내려다본다. 벽 너머(+x·+z, 대각 포함)에 바닥이 있는 벽은 그 바닥을 가리므로
+    // 낮은 벽(허리 높이)으로 세운다. 너머에 아무것도 없는 바깥 벽만 높게. 벽의 윗면은 모두 까맣게 칠한다.
+    const float LowWallHeight = 1.6f;
+    static Material wallTopMat;
+
+    bool IsFrontWall(Vector2Int c) =>
+        !IsFloor(c) && (IsFloor(c + Vector2Int.right) || IsFloor(c + Vector2Int.up) || IsFloor(c + Vector2Int.one));
+
+    // 밟을 수 있는 칸에서 d 방향이 높은 벽인가 — 벽 횃불·책장·관은 여기에만 붙인다
+    bool IsBackWall(Vector2Int floor, Vector2Int d) => At(floor + d) == C.Solid && !IsFrontWall(floor + d);
+
+    GameObject BuildWall(Vector2Int c, Transform parent)
+    {
+        var go = Instantiate(wallPrefab, GridTile.CellToWorld(c), Quaternion.identity, parent);
+        go.AddComponent<WallTile>();   // 누르면 빨간 표시 (GridClickMover)
+        float h = GridTile.CellSize;
+        if (IsFrontWall(c))
+        {
+            // 프리팹의 벽돌 덩어리(자식)를 낮게 눌러 앉힌다
+            float k = LowWallHeight / GridTile.CellSize;
+            foreach (Transform child in go.transform)
+            {
+                var sc = child.localScale; var pos = child.localPosition;
+                child.localScale = new Vector3(sc.x, sc.y * k, sc.z);
+                child.localPosition = new Vector3(pos.x, pos.y * k, pos.z);
+            }
+            go.name = "WallLow";
+            h = LowWallHeight;
+        }
+        if (wallTopMat == null)
+        {
+            var sh = Shader.Find("Universal Render Pipeline/Unlit") ?? Shader.Find("Sprites/Default");
+            wallTopMat = new Material(sh) { color = Color.black };
+            if (wallTopMat.HasProperty("_BaseColor")) wallTopMat.SetColor("_BaseColor", Color.black);
+        }
+        var top = GameObject.CreatePrimitive(PrimitiveType.Quad);
+        Destroy(top.GetComponent<Collider>());
+        top.name = "Top";
+        top.transform.SetParent(go.transform, false);
+        top.transform.localPosition = new Vector3(0, h + 0.02f, 0);
+        top.transform.localRotation = Quaternion.Euler(90, 0, 0);
+        top.transform.localScale = new Vector3(GridTile.CellSize, GridTile.CellSize, 1);
+        top.GetComponent<Renderer>().sharedMaterial = wallTopMat;
+        return go;
     }
 
     bool TouchesFloor(Vector2Int c)
@@ -487,13 +597,17 @@ public class FloorGenerator : MonoBehaviour
         Put(giantDoor, doorCell, Quaternion.Euler(0, outDir.x != 0 ? 90f : 0f, 0));
         occupied.Add(outsideDoor);
 
+        // 플레이어: 방 가운데, 문 쪽을 보고
+        Put(player, Center(start.rect) - outDir, Quaternion.LookRotation(new Vector3(outDir.x, 0, outDir.y)));
+
         // 곡괭이·도끼: 문 바로 안쪽 옆
         var inside = doorCell - outDir;
         var side = new Vector2Int(outDir.y, outDir.x);
-        Put(tools, inside + side, Quaternion.LookRotation(new Vector3(-outDir.x, 0, -outDir.y)));
-
-        // 플레이어: 방 가운데, 문 쪽을 보고
-        Put(player, Center(start.rect) - outDir, Quaternion.LookRotation(new Vector3(outDir.x, 0, outDir.y)));
+        Vector2Int? toolCell = null;   // 문 옆 칸이 막혀 있으면 반대쪽 옆, 그래도 안 되면 방 안 아무 벽가
+        foreach (var c in new[] { inside + side, inside - side })
+            if (toolCell == null && IsFloor(c) && start.rect.Contains(c) && !occupied.Contains(c)) toolCell = c;
+        if (toolCell == null) toolCell = FreeCellIn(start.rect, true);
+        Put(tools, toolCell, Quaternion.LookRotation(new Vector3(-outDir.x, 0, -outDir.y)));
 
         // 문을 나서자마자 "너무 어둡다"
         Put(darkTrigger, outsideDoor, Quaternion.identity);
@@ -567,6 +681,20 @@ public class FloorGenerator : MonoBehaviour
         return null;
     }
 
+    // 뒷벽(세워진 벽)에 붙은 빈 칸 — 키 큰 소품이 앞을 가리지 않게. 없으면 아무 빈 칸.
+    Vector2Int? FreeBackWallCell(RectInt r)
+    {
+        var cand = new List<Vector2Int>();
+        for (int x = r.xMin; x < r.xMax; x++)
+            for (int y = r.yMin; y < r.yMax; y++)
+            {
+                var c = new Vector2Int(x, y);
+                if (occupied.Contains(c) || BlocksEntrance(c, r)) continue;
+                foreach (var d in Dirs4) if (IsBackWall(c, d)) { cand.Add(c); break; }
+            }
+        return cand.Count > 0 ? Pick(cand) : FreeCellIn(r, true);
+    }
+
     // 방 밖의 바닥(문·통로)과 맞닿은 칸은 비워 둔다
     bool BlocksEntrance(Vector2Int c, RectInt r)
     {
@@ -610,7 +738,7 @@ public class FloorGenerator : MonoBehaviour
         {
             var c = kv.Key;
             if (At(c) == C.Door || occupied.Contains(c) || NextToDoor(c)) continue;
-            foreach (var d in Dirs4) if (!IsFloor(c + d)) cands.Add((c, d));
+            foreach (var d in Dirs4) if (IsBackWall(c, d)) cands.Add((c, d));
         }
         int NewlyLit(Vector2Int c)
         {
@@ -654,13 +782,7 @@ public class FloorGenerator : MonoBehaviour
         {
             var c = Pick(cells);
             cells.Remove(c);
-            occupied.Add(c);
-            GameObject go;
-            if (prefab != null) go = Instantiate(prefab, GridTile.CellToWorld(c), Quaternion.Euler(0, R(0, 360), 0), root);
-            else go = FallbackPickup(id, c);
-            var p = go.GetComponent<Pickup>() ?? go.AddComponent<Pickup>();
-            p.itemId = id;
-            p.triggerOnEnter = true;
+            SpawnPickup(id, prefab, c);
         }
     }
 
@@ -748,21 +870,24 @@ public class FloorGenerator : MonoBehaviour
     }
 
     // ---- 방 소품 ----
-    // againstWall: 벽에 붙여 방 안쪽을 보게 (책장·관), 아니면 방 안쪽 칸 (우물)
-    void PlaceProps<T>(GameObject prefab, int count, bool againstWall) where T : Prop
+    // againstWall: 뒷벽에 붙여 방 안쪽을 보게 (책장·관), 아니면 방 안쪽 칸 (우물)
+    // first: 튜토리얼 순서상 이 소품을 꼭 둘 방 (먼저 놓고, 나머지는 무작위)
+    void PlaceProps<T>(GameObject prefab, int count, bool againstWall, Room first = null) where T : Prop
     {
-        var open = rooms.FindAll(r => !r.locked);
-        for (int i = 0; i < count && open.Count > 0; i++)
+        var open = rooms.FindAll(r => !r.locked && r != first);
+        for (int i = 0; i < count; i++)
         {
-            var r = Pick(open);
-            open.Remove(r);   // 한 방에 같은 소품은 하나
-            var cell = FreeCellIn(r.rect, againstWall);
+            Room r;
+            if (i == 0 && first != null) r = first;
+            else if (open.Count > 0) { r = Pick(open); open.Remove(r); }   // 한 방에 같은 소품은 하나
+            else break;
+            var cell = againstWall ? FreeBackWallCell(r.rect) : FreeCellIn(r.rect, false);
             if (cell == null) continue;
             occupied.Add(cell.Value);
-            // 벽 쪽을 등지고 방 안을 보게
+            // 뒷벽을 등지고 방 안을 보게
             var face = Quaternion.Euler(0, R(0, 4) * 90f, 0);
             foreach (var d in Dirs4)
-                if (!IsFloor(cell.Value + d)) { face = Quaternion.LookRotation(new Vector3(-d.x, 0, -d.y)); break; }
+                if (IsBackWall(cell.Value, d)) { face = Quaternion.LookRotation(new Vector3(-d.x, 0, -d.y)); break; }
             GameObject go;
             if (prefab != null) go = Instantiate(prefab, GridTile.CellToWorld(cell.Value), face, root);
             else
@@ -787,22 +912,51 @@ public class FloorGenerator : MonoBehaviour
             var r = Pick(open);
             var cell = FreeCellIn(r.rect, true);
             if (cell == null) { open.Remove(r); continue; }
-            occupied.Add(cell.Value);
-            GameObject go;
-            if (potPrefab != null) go = Instantiate(potPrefab, GridTile.CellToWorld(cell.Value), Quaternion.Euler(0, R(0, 360), 0), root);
-            else
-            {
-                go = new GameObject("Pot");
-                go.transform.SetParent(root, false);
-                go.transform.position = GridTile.CellToWorld(cell.Value);
-                var body = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                body.transform.SetParent(go.transform, false);
-                body.transform.localPosition = new Vector3(0, 0.7f, 0);
-                body.transform.localScale = new Vector3(1.2f, 1.4f, 1.2f);
-                body.GetComponent<Renderer>().material.color = new Color(0.55f, 0.36f, 0.22f);
-            }
-            if (go.GetComponent<Pot>() == null) go.AddComponent<Pot>();
+            SpawnPot(cell.Value, false);
         }
+    }
+
+    // neverEmpty: 튜토리얼용 — 반드시 무언가 나온다 (빈 것·쥐 없음)
+    void SpawnPot(Vector2Int cell, bool neverEmpty)
+    {
+        occupied.Add(cell);
+        GameObject go;
+        if (potPrefab != null) go = Instantiate(potPrefab, GridTile.CellToWorld(cell), Quaternion.Euler(0, R(0, 360), 0), root);
+        else
+        {
+            go = new GameObject("Pot");
+            go.transform.SetParent(root, false);
+            go.transform.position = GridTile.CellToWorld(cell);
+            var body = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            body.transform.SetParent(go.transform, false);
+            body.transform.localPosition = new Vector3(0, 0.7f, 0);
+            body.transform.localScale = new Vector3(1.2f, 1.4f, 1.2f);
+            body.GetComponent<Renderer>().material.color = new Color(0.55f, 0.36f, 0.22f);
+        }
+        var pot = go.GetComponent<Pot>() ?? go.AddComponent<Pot>();
+        pot.neverEmpty = neverEmpty;
+    }
+
+    // 나뭇가지·돌멩이 하나를 그 칸에
+    void SpawnPickup(string id, GameObject prefab, Vector2Int c)
+    {
+        occupied.Add(c);
+        var go = prefab != null ? Instantiate(prefab, GridTile.CellToWorld(c), Quaternion.Euler(0, R(0, 360), 0), root) : FallbackPickup(id, c);
+        var p = go.GetComponent<Pickup>() ?? go.AddComponent<Pickup>();
+        p.itemId = id;
+        p.triggerOnEnter = true;
+    }
+
+    // 방에 처음 들어서면 한 번 뜨는 안내 (한 번 본 안내는 다음 회차에 다시 뜨지 않는다)
+    void AddHint(string id, RectInt area, string message)
+    {
+        if (TowerMemory.HintSeen(id)) return;
+        var go = new GameObject("Hint_" + id);
+        go.transform.SetParent(root, false);
+        var h = go.AddComponent<RoomHint>();
+        h.id = id;
+        h.area = area;
+        h.message = message;
     }
 
     // 3D 모델이 없을 때 쓰는 간단한 모양

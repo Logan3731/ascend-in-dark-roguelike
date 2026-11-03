@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 
 // 격자 이동 규칙 (플레이어·몬스터 공통). 8방향으로 움직이고 대각선도 한 칸 = 한 턴.
-// 단, 벽 모서리를 비스듬히 뚫고 지나갈 수는 없다: 대각선 두 옆 칸이 모두 바닥이어야 한다.
+// 대각선은 벽 모서리 하나는 끼고 지나갈 수 있지만, 두 벽 사이를 비집거나 문을 비스듬히 드나들 수는 없다.
 // (옆 칸에 몬스터가 서 있는 건 괜찮다. 막는 건 벽뿐)
 public static class GridNav
 {
@@ -44,14 +44,16 @@ public static class GridNav
 
     public static int Distance(Vector2Int a, Vector2Int b) => Mathf.Max(Mathf.Abs(a.x - b.x), Mathf.Abs(a.y - b.y));
 
-    // from → from+d 로 한 걸음: 대각선이면 벽 모서리를 끼고 돌 수 없다
+    // from → from+d 로 한 걸음 (이동·공격 공통). 대각선은 벽 모서리 하나쯤은 끼고 지나갈 수 있다.
+    // 막히는 건 두 벽 사이를 비집는 경우(양옆이 다 벽)와 문을 비스듬히 드나드는 경우뿐.
     public static bool CornerFree(Vector2Int from, Vector2Int d, HashSet<Vector2Int> floors)
     {
         if (d.x == 0 || d.y == 0) return true;
-        return floors.Contains(from + new Vector2Int(d.x, 0)) && floors.Contains(from + new Vector2Int(0, d.y));
+        if (Door.At(from) != null || Door.At(from + d) != null) return false;
+        return floors.Contains(from + new Vector2Int(d.x, 0)) || floors.Contains(from + new Vector2Int(0, d.y));
     }
 
-    // 바로 옆 칸인가 (대각선 포함, 벽 모서리 너머는 아님) — 공격·상호작용 거리
+    // 바로 옆 칸인가 (대각선 포함, 두 벽 사이 너머는 아님) — 공격·상호작용 거리
     public static bool Adjacent(Vector2Int a, Vector2Int b, HashSet<Vector2Int> floors)
     {
         if (a == b || Distance(a, b) != 1) return false;

@@ -8,6 +8,7 @@ public class MonsterHealthBar : MonoBehaviour
     const float Width = 160f, Height = 14f, Scale = 0.012f;
 
     Monster target;
+    Canvas canvas;
     RectTransform fill;
     Text label;
     float headHeight;
@@ -80,6 +81,8 @@ public class MonsterHealthBar : MonoBehaviour
     void LateUpdate()
     {
         if (target == null) { Destroy(gameObject); return; }
+        if (canvas == null) canvas = GetComponent<Canvas>();
+        canvas.enabled = !target.Unseen;   // 시야 밖의 적은 체력바도 보이지 않는다
         if (!litKnown || target.InLight != lastLit || target.Asleep != lastAsleep) Refresh();
         transform.position = target.transform.position + Vector3.up * headHeight;
         var cam = Camera.main;

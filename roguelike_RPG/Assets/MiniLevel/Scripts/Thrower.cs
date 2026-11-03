@@ -5,6 +5,7 @@ using UnityEngine;
 // 5칸까지, 벽·닫힌 문을 넘지 못하고, 날아가는 길에 적이 있으면 그 적에게 맞는다.
 // - 횃불: 맞으면 불 피해 3~5. 떨어진 자리에서 남은 내구도만큼 타며 빛 구역이 된다 (그 안의 적은 약해진다). 밟으면 다시 줍는다.
 // - 돌멩이: 피해 2~4. 떨어진 자리에 남아서 다시 주울 수 있다.
+// - 물약: 깨진 자리와 주변 한 칸의 적에게 효과가 퍼진다 (Potions.Shatter). 던지면 정체가 드러난다.
 public static class Thrower
 {
     public const int Range = 5;
@@ -75,12 +76,15 @@ public static class Thrower
         GameLog.Add($"{what.name}{Korean.Josa(what.name, "을", "를")} 던졌다.", GameLog.Info);
 
         // 맞힌 적에게 먼저 피해 (쓰러지면 이번 턴에 덤비지 못한다)
-        if (hit != null) hit.HitByThrow(p, torch ? Random.Range(3, 6) : Random.Range(2, 5), torch ? "횃불" : "돌멩이", Flight);
+        // 물약은 맞힌 적에게 피해를 주지 않고, 깨진 자리 주변에 효과가 퍼진다 (이번 턴 적의 행동보다 먼저)
+        bool potion = what.kind == ItemKind.Potion;
+        if (potion) Potions.Shatter(p, what, land, Flight);
+        else if (hit != null) hit.HitByThrow(p, torch ? Random.Range(3, 6) : Random.Range(2, 5), torch ? "횃불" : "돌멩이", Flight, torch);
 
-        mover.StartCoroutine(Fly(p.transform.position, GridTile.CellToWorld(land), torch, Flight, () =>
+        mover.StartCoroutine(Fly(p.transform.position, GridTile.CellToWorld(land), what, Flight, () =>
         {
             if (torch) ThrownTorch.Create(land, Mathf.Max(1, left));
-            else DropStone(land);
+            else if (!potion) DropStone(land);
         }));
 
         // 던지는 데 한 턴: 그사이 다른 적도 움직인다
@@ -102,14 +106,16 @@ public static class Thrower
     }
 
     // 포물선으로 날아가는 작은 물체 (연출용)
-    static IEnumerator Fly(Vector3 from, Vector3 to, bool torch, float seconds, System.Action onLand)
+    static IEnumerator Fly(Vector3 from, Vector3 to, ItemDef what, float seconds, System.Action onLand)
     {
-        var go = GameObject.CreatePrimitive(torch ? PrimitiveType.Cylinder : PrimitiveType.Sphere);
+        bool torch = what == Items.Torch, potion = what.kind == ItemKind.Potion;
+        var go = GameObject.CreatePrimitive(torch ? PrimitiveType.Cylinder : potion ? PrimitiveType.Capsule : PrimitiveType.Sphere);
         Object.Destroy(go.GetComponent<Collider>());
-        go.transform.localScale = torch ? new Vector3(0.15f, 0.5f, 0.15f) : Vector3.one * 0.45f;
+        go.transform.localScale = torch ? new Vector3(0.15f, 0.5f, 0.15f) : potion ? new Vector3(0.3f, 0.25f, 0.3f) : Vector3.one * 0.45f;
         var mat = go.GetComponent<Renderer>().material;
-        mat.color = torch ? new Color(1f, 0.55f, 0.15f) : new Color(0.45f, 0.44f, 0.42f);
+        mat.color = torch ? new Color(1f, 0.55f, 0.15f) : potion ? Potions.BottleColor(what) : new Color(0.45f, 0.44f, 0.42f);
         if (torch) { mat.EnableKeyword("_EMISSION"); mat.SetColor("_EmissionColor", new Color(1f, 0.5f, 0.1f) * 3f); }
+        if (potion) { mat.EnableKeyword("_EMISSION"); mat.SetColor("_EmissionColor", Potions.BottleColor(what) * 1.5f); }
         from += Vector3.up * 2.2f;
         to += Vector3.up * 0.3f;
         for (float t = 0f; t < 1f; t += Time.deltaTime / seconds)

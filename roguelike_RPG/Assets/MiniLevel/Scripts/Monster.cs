@@ -48,6 +48,7 @@ public class Monster : Interactable
     public int AtkMax { get; private set; }
     public int Strength { get; private set; }
     public bool WillAttack { get; private set; }           // 이번 턴에 이동 대신 공격한다
+    public bool Unseen { get; set; }                       // 시야 밖이라 보이지 않는다 (FogOfWar가 정한다 — 체력바도 숨긴다)
     public string Label => $"Lv.{level} {displayName}";
 
     // 빛 안이면 약해지고(이름 흰색) 어둠 속이면 사나워진다(이름 빨간색)
@@ -90,6 +91,55 @@ public class Monster : Interactable
     void Start() { bar = MonsterHealthBar.Create(this); }
 
     void OnDestroy() { if (bar != null) Destroy(bar.gameObject); ClearWarning(); }
+
+    void OnEnable() => TurnManager.OnTurnEnded += OnTurnEnded;
+    void OnDisable() => TurnManager.OnTurnEnded -= OnTurnEnded;
+
+    // ---- 던진 물약의 효과: 중독·깊은 잠·회복 ----
+
+    int poisonLeft;
+    PlayerStats poisoner;      // 독으로 쓰러지면 경험은 던진 사람에게
+    int deepSleep;             // 잠의 물약에 취한 남은 턴: 이동안은 다가가도·소리가 나도 깨지 않는다
+
+    public void Poison(PlayerStats by, int turns, float delay)
+    {
+        poisoner = by;
+        poisonLeft = Mathf.Max(poisonLeft, turns);
+        GameLog.Add($"{displayName}{Josa("이", "가")} 중독되었다!", GameLog.Good);
+        DamagePopup.Spawn(DamagePopup.Above(this), "중독!", DamagePopup.Poison, 1f, delay);
+    }
+
+    public void PutToSleep(int turns, float delay)
+    {
+        Asleep = true;
+        deepSleep = turns;
+        WillAttack = false;
+        charging = false;
+        ClearWarning();
+        GameLog.Add($"{displayName}{Josa("이", "가")} 픽 쓰러져 잠들었다. (기습 기회!)", GameLog.Good);
+        DamagePopup.Spawn(DamagePopup.Above(this), "Zzz", DamagePopup.Miss, 1.3f, delay);
+    }
+
+    public void HealBy(int amount, float delay)
+    {
+        int before = Hp;
+        Hp = Mathf.Min(MaxHp, Hp + amount);
+        if (bar != null) bar.Refresh();
+        GameLog.Add($"{displayName}의 상처가 아물었다… (+{Hp - before})", GameLog.Bad);
+        DamagePopup.Spawn(DamagePopup.Above(this), $"+{Hp - before}", DamagePopup.Poison, 1.1f, delay);
+    }
+
+    void OnTurnEnded(int turn)
+    {
+        if (Dead) return;
+        if (deepSleep > 0) deepSleep--;
+        if (poisonLeft > 0 && poisoner != null)
+        {
+            poisonLeft--;
+            DamagePopup.Spawn(DamagePopup.Above(this), "-2", DamagePopup.Poison, 0.9f);
+            TakeDamage(2, poisoner, 0f);
+        }
+    }
 
     // 레벨에 따라 강해지고, 체력은 개체마다 조금씩 다르다
     void RollStats()
@@ -174,10 +224,10 @@ public class Monster : Interactable
         TakeDamage(dmg, player, delay);
     }
 
-    // 던진 돌·횃불에 맞는다 (피하지 못한다)
-    public void HitByThrow(PlayerStats player, int dmg, string what, float delay)
+    // 던진 돌·횃불·불꽃 물약에 맞는다 (피하지 못한다). fire면 불에 약한 적에게 두 배.
+    public void HitByThrow(PlayerStats player, int dmg, string what, float delay, bool fire = false)
     {
-        if (fireWeak && what == "횃불")
+        if (fireWeak && fire)
         {
             dmg *= 2;
             GameLog.Add($"{displayName}{Josa("은", "는")} 불에 약하다!", GameLog.Good);
@@ -211,7 +261,7 @@ public class Monster : Interactable
     void TakeDamage(int amount, PlayerStats player, float delay)
     {
         Hp = Mathf.Max(0, Hp - amount);
-        if (Asleep) { Asleep = false; WakeUp(); }
+        if (Asleep) { Asleep = false; deepSleep = 0; WakeUp(); }
         awake = true;
         MakeNoise(4, 0.4f);   // 싸우는 소리에 근처의 잠든 적이 깰 수 있다
         if (bar != null) bar.Refresh();
@@ -263,6 +313,7 @@ public class Monster : Interactable
         if (Asleep)
         {
             if (ambushed) return;   // 지금 기습당하는 중
+            if (deepSleep > 0) return;   // 잠의 물약: 아직 곯아떨어져 있다
             if (!TryWake(dist)) return;
         }
         else if (!awake && dist <= sight)
@@ -301,7 +352,7 @@ public class Monster : Interactable
     // 소리(곡괭이 등)에 깬다
     public void WakeFromNoise()
     {
-        if (!Asleep) return;
+        if (!Asleep || deepSleep > 0) return;
         Asleep = false;
         GameLog.Add($"소리에 {displayName}{Josa("이", "가")} 깼다!", GameLog.Bad);
         WakeUp();
@@ -331,7 +382,7 @@ public class Monster : Interactable
     {
         foreach (var m in FindObjectsByType<Monster>(FindObjectsSortMode.None))
         {
-            if (m == this || !m.Asleep || m.Dead || !m.enabled) continue;
+            if (m == this || !m.Asleep || m.deepSleep > 0 || m.Dead || !m.enabled) continue;
             if (GridNav.Distance(m.Cell, Cell) > radius || Random.value >= chance) continue;
             m.Asleep = false;
             GameLog.Add($"소란에 {m.displayName}{Korean.Josa(m.displayName, "이", "가")} 깼다!", GameLog.Bad);

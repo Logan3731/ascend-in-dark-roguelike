@@ -42,6 +42,7 @@ public class InventoryUI : MonoBehaviour
     RectTransform confirmPanel;
     Text confirmText;
     Button confirmUse;
+    Button confirmThrow;   // 물약일 때만: 마시지 않고 던진다
     ItemDef confirmItem;
 
     // 들고 있는 장비
@@ -85,7 +86,7 @@ public class InventoryUI : MonoBehaviour
             if (held != null && returning == null) heldIcon.rectTransform.anchoredPosition = mouse;
             if (tooltip.gameObject.activeSelf) PlaceNearMouse(tooltip, mouse);
         }
-        else if ((kb.iKey.wasPressedThisFrame || kb.tabKey.wasPressedThisFrame) && !DialogUI.IsOpen && !PauseMenu.IsOpen && !TitleScreen.IsOpen && !Minimap.FullOpen && !CraftUI.IsOpen && !ShopUI.IsOpen && !player.Dead) Open();
+        else if ((kb.iKey.wasPressedThisFrame || kb.tabKey.wasPressedThisFrame) && !DialogUI.IsOpen && !PauseMenu.IsOpen && !TitleScreen.IsOpen && !CraftUI.IsOpen && !ShopUI.IsOpen && !player.Dead) Open();
     }
 
     public void Open()
@@ -158,6 +159,7 @@ public class InventoryUI : MonoBehaviour
         if (def.kind == ItemKind.Torch && player.HasTorch) s += $"\n\n<color=#f08a2b>지금 쓰는 횃불 내구도 {player.Torch} / {player.maxTorch}</color>";
         string hint = equipped ? "클릭하거나 끌어서 가방에 넣으면 벗는다"
             : def == Items.Stone ? "클릭: 던지기 (재료로도 쓴다)"
+            : def.kind == ItemKind.Potion ? "클릭: 마시거나 던진다"
             : Usable(def) ? "클릭: 사용"
             : def.slot != EquipSlot.None ? "클릭하거나 끌어서 장비 칸에 넣는다"
             : def.kind == ItemKind.Material ? "시작한 방의 모루에서 쓸 수 있다"
@@ -204,8 +206,9 @@ public class InventoryUI : MonoBehaviour
                    $"\n<color=#9e9480>{def.name} {p.Food} → {p.Food - 1}</color>";
         }
         else if (def.kind == ItemKind.Potion)
-            body = $"<size=26><color=#dcb86b>{def.name}{Korean.Josa(def.name, "을", "를")} 마실까?</color></size>\n\n" +
-                   (Potions.IsKnown(def) ? $"<color=#a8d46f>{Potions.Preview(def)}</color>" : "<color=#e0a04a>무슨 일이 일어날지 모른다…</color>");
+            body = $"<size=26><color=#dcb86b>{def.name}{Korean.Josa(def.name, "을", "를")} 어떻게 할까?</color></size>\n\n" +
+                   (Potions.IsKnown(def) ? $"<color=#a8d46f>{Potions.Preview(def)}</color>" : "<color=#e0a04a>무슨 일이 일어날지 모른다…</color>") +
+                   $"\n<color=#9ed0ff>{Potions.ThrowPreview(def)}</color>";
         else if (def == Items.Stone)
             body = "<size=26><color=#dcb86b>돌멩이를 던질까?</color></size>\n\n" +
                    $"던질 칸을 고른다 ({Thrower.Range}칸까지)\n<color=#dcb86b>맞으면 피해 2~4</color>\n<color=#9e9480>떨어진 돌은 다시 주울 수 있다</color>";
@@ -219,6 +222,7 @@ public class InventoryUI : MonoBehaviour
                    "내구도가 줄지 않는다";
         confirmText.text = body;
         confirmUse.GetComponentInChildren<Text>().text = def.kind == ItemKind.Food ? "먹는다" : def.kind == ItemKind.Potion ? "마신다" : def == Items.Stone ? "던진다" : p.TorchHeld ? "내린다" : "든다";
+        confirmThrow.gameObject.SetActive(def.kind == ItemKind.Potion);
 
         confirm.SetActive(true);
         confirm.transform.SetAsLastSibling();
@@ -242,6 +246,15 @@ public class InventoryUI : MonoBehaviour
         else if (def.kind == ItemKind.Torch) player.ToggleTorch();
         else if (def.kind == ItemKind.Potion) Potions.Drink(player, def);
         else if (def == Items.Stone) { Close(); Thrower.Begin(Items.Stone); }
+    }
+
+    void ThrowConfirmed()
+    {
+        var def = confirmItem;
+        CloseConfirm();
+        if (def == null) return;
+        Close();
+        Thrower.Begin(def);
     }
 
     // ---- 장비 들기·놓기 ----
@@ -546,12 +559,13 @@ public class InventoryUI : MonoBehaviour
         confirmPanel = cp.rectTransform;
         confirmPanel.anchorMin = confirmPanel.anchorMax = new Vector2(0.5f, 0.5f);
         confirmPanel.pivot = new Vector2(0, 1);
-        confirmPanel.sizeDelta = new Vector2(380, 210);
+        confirmPanel.sizeDelta = new Vector2(420, 250);
         var col = cp.gameObject.AddComponent<Outline>();
         col.effectColor = Gold; col.effectDistance = new Vector2(2, -2);
         confirmText = MakeText(confirmPanel, "", 20, TextAnchor.UpperLeft, GameLog.Info);
-        Place(confirmText.rectTransform, 22, -18, 340, 120);
-        confirmUse = MakeButton(confirmPanel, "사용", UseConfirmed, new Vector2(-150, 18));
+        Place(confirmText.rectTransform, 22, -18, 380, 160);
+        confirmUse = MakeButton(confirmPanel, "사용", UseConfirmed, new Vector2(-144, 18));
+        confirmThrow = MakeButton(confirmPanel, "던진다", ThrowConfirmed, new Vector2(-270, 18));
         MakeButton(confirmPanel, "취소", CloseConfirm, new Vector2(-18, 18));
         confirm.SetActive(false);
 

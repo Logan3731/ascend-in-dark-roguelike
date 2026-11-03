@@ -23,6 +23,7 @@ public static class TowerMemory
         public int karma;
         public List<int> upgradeLevels = new List<int>();
         public List<Bones> bones = new List<Bones>();
+        public List<string> hints = new List<string>();   // 이미 본 튜토리얼 안내
     }
 
     // ---- 강화 목록 ----
@@ -101,6 +102,17 @@ public static class TowerMemory
     public static void RemoveBones(Bones b)
     {
         D.bones.Remove(b);
+        Save();
+    }
+
+    // 튜토리얼 안내: 한 번 본 것은 다음 회차에 다시 띄우지 않는다
+    public static bool HintSeen(string id) => D.hints != null && D.hints.Contains(id);
+
+    public static void MarkHint(string id)
+    {
+        if (D.hints == null) D.hints = new List<string>();
+        if (D.hints.Contains(id)) return;
+        D.hints.Add(id);
         Save();
     }
 

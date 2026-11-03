@@ -202,7 +202,7 @@ public class PlayerStats : MonoBehaviour, LightSources.ISource
 
         int before = Hunger;
         Hunger = Mathf.Max(0, Hunger - hungerPerTurn);
-        if (before > hungryWarnAt && Hunger <= hungryWarnAt) GameLog.Add("배가 고프다.", GameLog.Warn);
+        if (before > hungryWarnAt && Hunger <= hungryWarnAt) GameLog.Add("배가 고프다. ([E]로 식량을 먹는다)", GameLog.Warn);
         if (Hunger == 0)
         {
             if (before > 0) GameLog.Add("굶주림에 몸이 버티지 못한다.", GameLog.Bad);

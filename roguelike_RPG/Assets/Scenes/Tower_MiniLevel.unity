@@ -170,14 +170,14 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4c9d9e2b5ff18e448ba2be57b21006ba, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::FloorGenerator
-  width: 41
-  height: 41
-  maxRooms: 16
-  keepDeadEnds: 8
-  maxDeadEndLength: 7
-  extraDoorChance: 0.05
-  straightness: 0.4
-  lockedRooms: 3
+  width: 27
+  height: 27
+  maxRooms: 9
+  keepDeadEnds: 3
+  maxDeadEndLength: 4
+  extraDoorChance: 0.03
+  straightness: 0.75
+  lockedRooms: 2
   ironDoorChance: 0.3
   seed: 0
   floorPrefab: {fileID: 1444709380592222624, guid: d6713063dc4f57d44922988eadc7acef, type: 3}
@@ -197,14 +197,14 @@ MonoBehaviour:
   bookshelfPrefab: {fileID: 4322363378392759715, guid: 5282a62fc60cf104b8d730cd60677556, type: 3}
   coffinPrefab: {fileID: 5489923462418813181, guid: 3e6410c334a1e3c4ca14d4d4b6ed9515, type: 3}
   wellPrefab: {fileID: 2664938364998916982, guid: b60989c9abcb50641b39316ec54b24e0, type: 3}
-  wallTorches: 12
-  branches: 14
-  stones: 10
-  pots: 16
-  bookshelves: 4
-  coffins: 3
-  wells: 2
-  secretRooms: 2
+  wallTorches: 7
+  branches: 8
+  stones: 6
+  pots: 9
+  bookshelves: 2
+  coffins: 2
+  wells: 1
+  secretRooms: 1
   player: {fileID: 1538796691}
   giantDoor: {fileID: 1785813250}
   tools: {fileID: 1811694408}
@@ -1077,7 +1077,6 @@ GameObject:
   - component: {fileID: 2000106798}
   - component: {fileID: 2000106800}
   - component: {fileID: 2000106799}
-  - component: {fileID: 2000106801}
   m_Layer: 0
   m_Name: HUD
   m_TagString: Untagged
@@ -1210,21 +1209,6 @@ MonoBehaviour:
   gameTitle: Ascend in Dark
   tagline: "\uBAA8\uB4E0 \uAC78 \uC783\uC5B4\uB3C4, \uACBD\uD5D8\uC740 \uB0A8\uB294\uB2E4"
   intro: {fileID: 2000106794}
---- !u!114 &2000106801
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2000106791}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: ff2cdbc110af93847a7d33fa25e297cd, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::Minimap
-  player: {fileID: 1538796694}
-  radiusWithTorch: 2
-  radiusWithoutTorch: 1
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
