@@ -130,6 +130,7 @@ public static class Potions
         if (!effect.ContainsKey(def) || !p.Bag.Remove(def)) return;
         var e = effect[def];
         Learn(def, e);
+        GridClickMover.PlayAnim("Drink");
 
         switch (e)
         {

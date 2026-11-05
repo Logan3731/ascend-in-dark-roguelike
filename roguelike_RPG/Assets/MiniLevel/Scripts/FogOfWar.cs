@@ -182,7 +182,11 @@ public class FogOfWar : MonoBehaviour
             var cell = it.Cell;
             bool see = visible.ContainsKey(cell);
             bool show = it is Monster ? see : see || explored.Contains(cell);
-            if (it is Monster m) m.Unseen = !show;
+            if (it is Monster m)
+            {
+                m.Unseen = !show;
+                foreach (var l in m.GetComponentsInChildren<Light>()) l.enabled = show;   // 정예·우두머리의 기운도 시야 밖에선 안 보이게
+            }
             SetShown(it, show);
         }
         foreach (var t in extraObjects)

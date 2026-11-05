@@ -344,8 +344,18 @@ public class GridClickMover : MonoBehaviour
     }
 
     // 공격할 때 모델만 대상 쪽으로 살짝 내질렀다가 돌아온다
+    // Mixamo 모션 트리거 (Attack·Hit·Die·Throw·Drink·PickUp·LightTorch). 애니메이터에 그 이름이 있을 때만 — MixamoSetup이 만든다.
+    public static void PlayAnim(string trigger)
+    {
+        var a = instance != null ? instance.animator : null;
+        if (a == null || !a.isActiveAndEnabled || a.runtimeAnimatorController == null) return;
+        foreach (var p in a.parameters)
+            if (p.name == trigger) { a.SetTrigger(trigger); return; }
+    }
+
     public void PlayLunge(Vector3 targetPos, float delay = 0f)
     {
+        PlayAnim("Attack");
         if (model != null) StartCoroutine(Lunge(targetPos, delay));
     }
 

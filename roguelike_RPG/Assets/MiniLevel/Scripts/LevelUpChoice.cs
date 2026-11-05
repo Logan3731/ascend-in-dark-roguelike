@@ -5,7 +5,7 @@ using UnityEngine;
 // 레벨이 오르면 보상 셋 중 하나를 고른다. 다른 대화창이 떠 있으면 닫힌 뒤에 띄운다 (여러 번 오르면 차례로).
 public class LevelUpChoice : MonoBehaviour
 {
-    public enum Perk { Vitality, Sharp, Focus, Technique, Stomach, Recovery, Torchbearer }
+    public enum Perk { Vitality, Sharp, Focus, Technique, Stomach, Recovery, Torchbearer, Might }
 
     static readonly Dictionary<Perk, (string label, string desc)> info = new Dictionary<Perk, (string, string)>
     {
@@ -16,6 +16,7 @@ public class LevelUpChoice : MonoBehaviour
         [Perk.Stomach] = ("허기 +25", "최대 허기 +25"),
         [Perk.Recovery] = ("걸음 회복 ↑", "걸을 때 체력 회복 빠르게"),
         [Perk.Torchbearer] = ("횃불 +60", "횃불 내구도 +60"),
+        [Perk.Might] = ("힘 +1", "힘 +1 (무거운 무기를 다룬다)"),
     };
 
     static LevelUpChoice runner;

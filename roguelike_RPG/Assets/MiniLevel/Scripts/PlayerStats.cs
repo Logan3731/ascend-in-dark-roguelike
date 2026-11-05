@@ -54,6 +54,26 @@ public class PlayerStats : MonoBehaviour, LightSources.ISource
     public int AttackMin => fistMin + (Weapon != null ? Weapon.attackMin : 0);
     public int AttackMax => fistMax + (Weapon != null ? Weapon.attackMax : 0);
 
+    // ---- 무기 무게 ----
+    // 무게가 힘보다 무거우면: 모자란 힘 1마다 명중 -12%, 같은 턴 선공 순서 -1 (휘청인다)
+    // 힘이 2 이상 남으면: 연속 공격 15% (4 이상이면 25%) — 가벼운 무기는 약하지만 자주 두 번 때린다
+    public int WeaponWeight => Weapon != null ? Weapon.weight : 0;
+    public int Overweight => Mathf.Max(0, WeaponWeight - Strength);
+    public float MissChance => Overweight * 0.12f;
+    public int TurnStrength => Strength - Overweight;
+    public float DoubleChance => WeaponChance(Strength - WeaponWeight);
+    static float WeaponChance(int spare) => spare >= 4 ? 0.25f : spare >= 2 ? 0.15f : 0f;
+
+    // 지금 힘으로 이 무기를 들면 어떤지 한 줄로 (소지품·대장간 창)
+    public string WeaponNote(ItemDef w)
+    {
+        int diff = Strength - w.weight;
+        if (diff < 0) return $"<color=#e0704a>무게 {w.weight} · 힘 {Strength} → 명중 -{-diff * 12}%, 선공 -{-diff}</color>";
+        float dbl = WeaponChance(diff);
+        return dbl > 0f ? $"<color=#a8d46f>무게 {w.weight} · 힘 {Strength} → 연속 공격 {Mathf.RoundToInt(dbl * 100)}%</color>"
+                        : $"<color=#9e9480>무게 {w.weight} · 힘 {Strength} → 알맞다</color>";
+    }
+
     public int RollAttack()
     {
         int dmg = UnityEngine.Random.Range(fistMin, fistMax + 1);
@@ -79,6 +99,7 @@ public class PlayerStats : MonoBehaviour, LightSources.ISource
         Hp = maxHp; Mp = maxMp; Hunger = maxHunger;
         Bag.EquipDirect(Items.Tunic);          // 남자 주인공: 누더기 튜닉 하나로 시작
         Bag.Add(Items.Food, startFood);
+        RunState.RestoreInto(this);            // 계단을 올라왔으면 아래층의 상태를 그대로 이어받는다
         Bag.OnChanged += () => OnChanged?.Invoke();
 
         // 횃불은 손뼈 아래에 있어서 직렬화 참조가 깨지기 쉽다 -> 실행 시 자식에서 찾는다
@@ -88,6 +109,18 @@ public class PlayerStats : MonoBehaviour, LightSources.ISource
             torchFlame = FindChild("Flame");
         if (torchStick == null || torchStick.scene != gameObject.scene)
             torchStick = FindChild("TorchStick");
+    }
+
+    // 층을 올라왔을 때 아래층 상태 되돌리기 (RunState.RestoreInto)
+    public void RestoreFrom(int maxHp, int hp, int maxMp, int mp, int maxHunger, int hunger, int torch, bool torchHeld,
+                            int gold, int exp, int level, int strength, int fistMin, int fistMax, int strikeCost, int stepsPerRegen,
+                            int poison, string playerName)
+    {
+        this.maxHp = maxHp; Hp = hp; this.maxMp = maxMp; Mp = mp; this.maxHunger = maxHunger; Hunger = hunger;
+        Torch = torch; TorchHeld = torchHeld; Gold = gold; Exp = exp; Level = level;
+        this.strength = strength; this.fistMin = fistMin; this.fistMax = fistMax;
+        this.strikeCost = strikeCost; this.stepsPerRegen = stepsPerRegen;
+        PoisonTurns = poison; PlayerName = playerName;
     }
 
     // 경험의 정수로 산 강화를 이번 복제에 적용
@@ -182,6 +215,7 @@ public class PlayerStats : MonoBehaviour, LightSources.ISource
         {
             case LevelUpChoice.Perk.Vitality: maxHp += 15; Hp += 15; break;
             case LevelUpChoice.Perk.Sharp: fistMin++; fistMax++; break;
+            case LevelUpChoice.Perk.Might: strength++; break;
             case LevelUpChoice.Perk.Focus: maxMp += 10; Mp += 10; break;
             case LevelUpChoice.Perk.Technique: strikeCost = Mathf.Max(4, strikeCost - 3); break;
             case LevelUpChoice.Perk.Stomach: maxHunger += 25; Hunger += 25; break;
@@ -241,6 +275,7 @@ public class PlayerStats : MonoBehaviour, LightSources.ISource
         Hp = Mathf.Max(0, Hp - amount);
         if (Dead)
         {
+            GridClickMover.PlayAnim("Die");
             GameLog.Add("당신은 쓰러졌다. 경험이 탑에 스며든다…", GameLog.Bad);
             OnDied?.Invoke();
         }
@@ -255,6 +290,7 @@ public class PlayerStats : MonoBehaviour, LightSources.ISource
         int before = Hunger;
         Hunger = Mathf.Min(maxHunger, Hunger + foodRestore);
         GameLog.Add("배를 채웠다.", GameLog.Good);
+        GridClickMover.PlayAnim("Drink");
         DamagePopup.Spawn(DamagePopup.Above(this), $"허기 +{Hunger - before}", DamagePopup.Heal, 0.9f);
         OnChanged?.Invoke();
     }

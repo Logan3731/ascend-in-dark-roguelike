@@ -88,7 +88,7 @@ public class FloorGenerator : MonoBehaviour
         height = mazeHeight;
         Seed = seed != 0 ? seed : System.Environment.TickCount;
         rng = new System.Random(Seed);
-        Potions.NewRun(Seed);   // 물약 색과 효과의 짝을 새로 섞는다
+        if (!RunState.Continuing) Potions.NewRun(Seed);   // 새 회차에만 물약 색과 효과의 짝을 새로 섞는다 (층을 올라도 그대로)
         Generate();
         BuildObjects();
         GridNav.Invalidate();
@@ -446,30 +446,43 @@ public class FloorGenerator : MonoBehaviour
             for (int i = 0; i < keyCount && keyChests.Count > 0; i++) keyChests[i % keyChests.Count].keys++;
         }
 
-        // 굶주린 고블린: 상인 방
-        Put(goblin, FreeCellIn(shopRoom.rect, true), RandomYaw());
+        // 굶주린 고블린: 상인이 있는 층(1·4·9층)의 상인 방에만
+        bool merchant = RunState.IsMerchantFloor;
+        if (merchant) Put(goblin, FreeCellIn(shopRoom.rect, true), RandomYaw());
+        else if (goblin != null) goblin.gameObject.SetActive(false);
+        bool tutorial = RunState.IsTutorial;
 
         // 벽 횃불 (꺼진 채로): 가장 많은 바닥을 밝힐 수 있는 자리에
         PlaceWallTorches(wallTorches);
 
         // 몬스터: 첫 방엔 잠든 쥐(기습 배우기), 물약 방엔 잠든 슬라임(불에 약하다 — 던져 보기), 상인 방은 안전.
         // 나머지는 상자가 있는 방일수록 지키는 녀석이 있다. 깊이에 따라 종류·레벨이 달라진다
-        SpawnMonster(FreeCellIn(firstRoom.rect, false), rat, 0, 1f);
-        if (potionRoom != null) SpawnMonster(FreeCellIn(potionRoom.rect, false), slime, 0, 1f);
+        // 2층부터는 튜토리얼 방도 그냥 방이다. 층이 오를수록 몬스터가 많고 세지고, 정예가 섞인다
+        if (tutorial)
+        {
+            SpawnMonster(FreeCellIn(firstRoom.rect, false), rat, 0, 1f, false);
+            if (potionRoom != null) SpawnMonster(FreeCellIn(potionRoom.rect, false), slime, 0, 1f, false);
+        }
+        float more = 0.05f * (RunState.Floor - 1);
         foreach (var r in rooms)
         {
-            if (r == firstRoom || r == potionRoom || r == shopRoom) continue;
-            float chance = r.locked ? 1f : r.hasChest ? 0.8f : 0.3f;
+            if (tutorial && (r == firstRoom || r == potionRoom)) continue;
+            if (merchant && r == shopRoom) continue;   // 상인 방은 안전
+            if (r == lastRoom) continue;
+            float chance = r.locked ? 1f : (r.hasChest ? 0.8f : 0.35f) + more;
             if (R01() < chance) SpawnMonster(FreeCellIn(r.rect, false), null, r.locked ? 1 : 0);
-            if (r.hasChest && r.rect.width * r.rect.height >= 25 && R01() < 0.4f) SpawnMonster(FreeCellIn(r.rect, false));
+            if (r.rect.width * r.rect.height >= 25 && R01() < (r.hasChest ? 0.4f : 0.2f) + more) SpawnMonster(FreeCellIn(r.rect, false));
         }
-        SpawnMonster(FreeCellIn(lastRoom.rect, false), wolf, 2, 0.5f);   // 계단 방 문지기
+        // 계단 방: 보스 층이면 우두머리, 아니면 문지기 늑대
+        if (RunState.IsBossFloor) SpawnBoss(lastRoom);
+        else SpawnMonster(FreeCellIn(lastRoom.rect, false), wolf, 1, 0.5f);
         foreach (var tip in tipChests)   // 막다른 길 상자 앞을 지키는 녀석
-            if (R01() < 0.35f) SpawnMonster(StepBack(tip), null, 0, 0.6f);
+            if (R01() < 0.35f + more) SpawnMonster(StepBack(tip), null, 0, 0.6f);
         var corridorCells = new List<Vector2Int>();
         foreach (var kv in dist)
             if (At(kv.Key) == C.Corridor && kv.Value > 10 && !occupied.Contains(kv.Key)) corridorCells.Add(kv.Key);
-        for (int i = 0; i < 2 && corridorCells.Count > 0; i++)
+        int wanderers = 2 + RunState.Floor / 3;
+        for (int i = 0; i < wanderers && corridorCells.Count > 0; i++)
         {
             var c = Pick(corridorCells);
             corridorCells.Remove(c);
@@ -607,7 +620,8 @@ public class FloorGenerator : MonoBehaviour
         foreach (var c in new[] { inside + side, inside - side })
             if (toolCell == null && IsFloor(c) && start.rect.Contains(c) && !occupied.Contains(c)) toolCell = c;
         if (toolCell == null) toolCell = FreeCellIn(start.rect, true);
-        Put(tools, toolCell, Quaternion.LookRotation(new Vector3(-outDir.x, 0, -outDir.y)));
+        if (RunState.IsTutorial) Put(tools, toolCell, Quaternion.LookRotation(new Vector3(-outDir.x, 0, -outDir.y)));
+        else if (tools != null) tools.gameObject.SetActive(false);   // 입구의 도구는 1층에만
 
         // 문을 나서자마자 "너무 어둡다"
         Put(darkTrigger, outsideDoor, Quaternion.identity);
@@ -706,25 +720,58 @@ public class FloorGenerator : MonoBehaviour
         return false;
     }
 
-    GameObject SpawnMonster(Vector2Int? cell, GameObject kind = null, int levelBonus = 0, float sleepChance = 0.85f)
+    // 층이 오를수록: 레벨이 오르고(10층이면 +7), 깊은 곳의 종족(슬라임·늑대)이 앞으로 나오고, 덜 잠들어 있고, 정예가 섞인다.
+    // 3층부터 슬라임 일부는 침 뱉는 슬라임(거리를 두고 예고한 칸에 산성 침).
+    int FloorLevel => (RunState.Floor - 1) * 4 / 5;
+
+    GameObject SpawnMonster(Vector2Int? cell, GameObject kind = null, int levelBonus = 0, float sleepChance = 0.85f, bool allowElite = true)
     {
         if (cell == null || !dist.TryGetValue(cell.Value, out var d)) return null;
-        float depth = maxDist > 0 ? (float)d / maxDist : 0f;
+        int fl = RunState.Floor;
+        float inFloor = maxDist > 0 ? (float)d / maxDist : 0f;
+        float depth = Mathf.Clamp01(inFloor * 0.6f + (fl - 1) / 9f * 0.7f);
         if (kind == null)
         {
-            if (depth < 0.35f) kind = R01() < 0.6f ? rat : bat;
-            else if (depth < 0.7f) kind = Pick(new[] { rat, bat, slime });
-            else kind = R01() < 0.55f ? wolf : slime;
+            if (depth < 0.3f) kind = R01() < 0.6f ? rat : bat;
+            else if (depth < 0.6f) kind = Pick(new[] { rat, bat, slime });
+            else kind = Pick(new[] { wolf, slime, bat, wolf });
         }
-        int level = kind == wolf && levelBonus >= 2 ? levelBonus : 1 + (depth > 0.6f && R01() < 0.5f ? 1 : 0) + levelBonus;
+        int level = 1 + FloorLevel + (inFloor > 0.6f && R01() < 0.5f ? 1 : 0) + levelBonus;
         var go = Spawn(kind, cell, Quaternion.Euler(0, R(0, 360), 0));
         if (go != null)
         {
             var m = go.GetComponent<Monster>();
             m.level = level;   // 아직 깨어나기(Awake) 전이라 능력치에 반영된다
-            if (R01() < sleepChance) m.FallAsleep();   // 대부분 잠들어 있다 → 몰래 다가가 기습
+            if (kind == slime && fl >= 3 && R01() < 0.4f)
+            {
+                m.behavior = Monster.Behavior.Spitter;
+                m.displayName = "침 뱉는 " + m.displayName;
+            }
+            if (allowElite && fl >= 2 && R01() < 0.06f + 0.035f * (fl - 2))
+            {
+                m.elite = true;
+                m.affix = (Monster.Affix)R(1, 6);
+            }
+            if (R01() < sleepChance * (1f - 0.04f * (fl - 1))) m.FallAsleep();   // 대부분 잠들어 있다 → 몰래 다가가 기습
         }
         return go;
+    }
+
+    // 우두머리: 5층은 늑대 우두머리, 10층은 거대 슬라임 여왕 (계단 방 한쪽에서 깨어 기다린다)
+    void SpawnBoss(Room room)
+    {
+        bool top = RunState.Floor >= RunState.TopFloor;
+        var kind = top ? slime : wolf;
+        var go = Spawn(kind, FreeCellIn(room.rect, false), Quaternion.Euler(0, R(0, 360), 0));
+        if (go == null) return;
+        var m = go.GetComponent<Monster>();
+        m.level = 2 + FloorLevel;
+        m.boss = true;
+        m.displayName = top ? "거대 슬라임 여왕" : "늑대 우두머리";
+        var b = go.AddComponent<Boss>();
+        b.kind = top ? Boss.Kind.SlimeQueen : Boss.Kind.PackLeader;
+        b.minionPrefab = kind;
+        b.minionLevel = 1 + FloorLevel;
     }
 
     // 벽 횃불: 아직 안 밝힌 바닥을 가장 많이 비추는 자리부터 (상위 몇 곳 중 무작위라 매번 조금씩 다르다)
@@ -950,7 +997,7 @@ public class FloorGenerator : MonoBehaviour
     // 방에 처음 들어서면 한 번 뜨는 안내 (한 번 본 안내는 다음 회차에 다시 뜨지 않는다)
     void AddHint(string id, RectInt area, string message)
     {
-        if (TowerMemory.HintSeen(id)) return;
+        if (!RunState.IsTutorial || TowerMemory.HintSeen(id)) return;
         var go = new GameObject("Hint_" + id);
         go.transform.SetParent(root, false);
         var h = go.AddComponent<RoomHint>();

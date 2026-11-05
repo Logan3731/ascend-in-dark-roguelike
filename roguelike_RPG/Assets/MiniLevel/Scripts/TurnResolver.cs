@@ -27,7 +27,7 @@ public static class TurnResolver
     {
         AttackedThisTurn = false;
         var attackers = new List<(int str, bool isPlayer, Monster m)>();
-        if (playerTarget != null) attackers.Add((player.Strength, true, playerTarget));
+        if (playerTarget != null) attackers.Add((player.TurnStrength, true, playerTarget));   // 무거운 무기는 늦다
         foreach (var m in Object.FindObjectsByType<Monster>(FindObjectsSortMode.None))
             if (m.enabled && !m.Dead && m.WillAttack) attackers.Add((m.Strength, false, m));
 

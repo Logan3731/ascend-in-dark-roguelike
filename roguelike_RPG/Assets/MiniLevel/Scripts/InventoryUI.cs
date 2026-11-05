@@ -118,6 +118,7 @@ public class InventoryUI : MonoBehaviour
             $"MP          {p.Mp} / {p.maxMp}\n" +
             $"허기        {p.Hunger} / {p.maxHunger}\n" +
             $"힘          {p.Strength}\n" +
+            (p.Weapon != null ? $"무기        {p.WeaponNote(p.Weapon)}\n" : "") +
             $"공격        {p.AttackMin} ~ {p.AttackMax}\n" +
             $"경험        {p.Exp}\n" +
             $"<color=#9ed0ff>경험의 정수  {TowerMemory.Essence}</color>";
@@ -154,7 +155,7 @@ public class InventoryUI : MonoBehaviour
             : def.kind == ItemKind.Material ? $"재료 · {player.Bag.Count(def)}개"
             : "도구";
         var s = $"<size=24><color=#dcb86b>{def.name}</color></size>\n<color=#9e9480>{kind}</color>\n\n{def.desc}";
-        if (def.attackMin > 0) s += $"\n\n<color=#dcb86b>공격 +{def.attackMin}~{def.attackMax}</color>";
+        if (def.attackMin > 0) s += $"\n\n<color=#dcb86b>공격 +{def.attackMin}~{def.attackMax}</color>\n{player.WeaponNote(def)}";
         if (def.kind == ItemKind.Food) s += $"\n\n<color=#a8d46f>허기 +{player.foodRestore}</color>";
         if (def.kind == ItemKind.Torch && player.HasTorch) s += $"\n\n<color=#f08a2b>지금 쓰는 횃불 내구도 {player.Torch} / {player.maxTorch}</color>";
         string hint = equipped ? "클릭하거나 끌어서 가방에 넣으면 벗는다"

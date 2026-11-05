@@ -169,6 +169,19 @@ MonoBehaviour:
   torchWarnAt: 20
   torchLight: {fileID: 2230098362653279921}
   torchFlame: {fileID: 8986363443830178483}
+  torchStick: {fileID: 0}
+  startFood: 2
+  foodRestore: 30
+  strength: 5
+  fistMin: 1
+  fistMax: 2
+  torchLightCells: 3
+  strikeCost: 10
+  stepsPerRegen: 8
+  torchRange: 34
+  torchIntensity: 38
+  glowRange: 32
+  glowIntensity: 20
 --- !u!1 &7428384430664398176
 GameObject:
   m_ObjectHideFlags: 0
@@ -486,7 +499,7 @@ Animator:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 4612330936513495526}
   m_Enabled: 1
-  m_Avatar: {fileID: 0}
+  m_Avatar: {fileID: 9000000, guid: fa295565faabd92419dd8b37df0fff9b, type: 3}
   m_Controller: {fileID: 9100000, guid: 5d9f4d912a91fce4eb51a5d1664d32fc, type: 2}
   m_CullingMode: 0
   m_UpdateMode: 0

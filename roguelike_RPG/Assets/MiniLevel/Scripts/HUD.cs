@@ -82,7 +82,7 @@ public class HUD : MonoBehaviour
         if (stats == null) return;
         var s = stats;
         string who = string.IsNullOrEmpty(s.PlayerName) ? $"{TowerMemory.RunCount}번째" : s.PlayerName;
-        headerText.text = $"Lv.{s.Level}  <size=16><color=#9e9480>{who} · 경험 {s.Exp}/{s.NextLevelExp}</color></size>";
+        headerText.text = $"Lv.{s.Level}  <size=16><color=#dcb86b>{RunState.Floor}층</color><color=#9e9480> · {who} · 경험 {s.Exp}/{s.NextLevelExp}</color></size>";
 
         poisonChip.SetActive(s.PoisonTurns > 0);
         poisonChipText.text = $"중독 {s.PoisonTurns}";

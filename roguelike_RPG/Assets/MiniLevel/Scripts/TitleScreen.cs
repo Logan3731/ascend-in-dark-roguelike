@@ -26,6 +26,7 @@ public class TitleScreen : MonoBehaviour
     {
         shownThisSession = false;
         Time.timeScale = 1f;
+        RunState.NewRun();
         SceneManager.LoadScene(SceneManager.GetActiveScene().name);
     }
 

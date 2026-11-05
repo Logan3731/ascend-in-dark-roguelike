@@ -15,6 +15,7 @@ public class Pickup : Interactable
         if (Used) return;
         if (!player.Bag.Add(Def, count)) { GameLog.Add("가방이 꽉 찼다.", GameLog.Warn); return; }
         Used = true;
+        GridClickMover.PlayAnim("PickUp");
         GameLog.Add(count > 1 ? $"{Def.name} {count}개를 주웠다." : $"{Def.name}{Korean.Josa(Def.name, "을", "를")} 주웠다.", GameLog.Good);
         DamagePopup.Spawn(DamagePopup.Above(player), $"+{Def.name}", DamagePopup.Heal, 0.8f);
         Destroy(gameObject);

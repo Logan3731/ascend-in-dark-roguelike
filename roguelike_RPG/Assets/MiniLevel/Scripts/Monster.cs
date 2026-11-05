@@ -32,6 +32,7 @@ public class Monster : Interactable
         Charger,    // 일직선 2~3칸이면 몸을 낮춰 예고 → 다음 턴 돌진. 비키면 헐떡이며 한 턴 무방비 (늑대)
         Skittish,   // 벽 횃불·던진 횃불의 빛엔 들어오지 않는다. 치고 빠진다 (박쥐)
         Coward,     // 다치면 달아난다(느리게). 깨어나면 근처 동료를 부른다 (쥐)
+        Spitter,    // 거리를 두고 산성 침을 뱉는다: 주황 칸으로 예고 → 다음 턴 그 칸에 떨어진다 (침 뱉는 슬라임)
     }
     [Header("행동")]
     public Behavior behavior = Behavior.Chaser;
@@ -85,10 +86,37 @@ public class Monster : Interactable
     {
         base.Awake();
         if (Visual != null) visualHome = Visual.localPosition;
+        ApplyTraits();
         RollStats();
+        RollTemperament();
     }
 
-    void Start() { bar = MonsterHealthBar.Create(this); }
+    void Start()
+    {
+        bar = MonsterHealthBar.Create(this);
+        home = Cell;
+        AddEliteGlow();
+    }
+
+    public bool IsAwake => awake && !Asleep;
+
+    // 우두머리가 불러낸 졸개 등: 바로 깨어 덤빈다
+    public void ForceAwake()
+    {
+        Asleep = false;
+        deepSleep = 0;
+        awake = true;
+    }
+
+    // 정예를 처음 마주쳤을 때 한 번: 어떤 성질인지 알려 준다
+    bool announced;
+    void AnnounceIfElite()
+    {
+        if (announced || (!elite && !boss)) return;
+        announced = true;
+        if (boss) GameLog.Add($"{displayName}{Josa("이", "가")} 모습을 드러냈다!", GameLog.Bad);
+        else GameLog.Add($"{displayName} — {AffixHint(affix)}.", GameLog.Bad);
+    }
 
     void OnDestroy() { if (bar != null) Destroy(bar.gameObject); ClearWarning(); }
 
@@ -147,10 +175,110 @@ public class Monster : Interactable
         int lv = Mathf.Max(1, level) - 1;
         float hp = baseHp * (1f + 0.3f * lv) * Random.Range(1f - hpVariance, 1f + hpVariance);
         MaxHp = Mathf.Max(1, Mathf.RoundToInt(hp));
-        Hp = MaxHp;
         AtkMin = attackMin + lv;
         AtkMax = attackMax + lv;
         Strength = strength + lv;
+        if (boss)
+        {
+            MaxHp *= 5;
+            AtkMin += 2; AtkMax += 3; Strength += 2;
+        }
+        else if (elite)
+        {
+            MaxHp *= 2;
+            AtkMin += 1; AtkMax += 2; Strength += 1;
+        }
+        Hp = MaxHp;
+    }
+
+    // 레벨을 다시 정한다 (실행 중에 불려 나온 졸개 등 — Awake 뒤라서 능력치를 다시 굴린다)
+    public void SetLevel(int lv)
+    {
+        level = lv;
+        RollStats();
+        if (bar != null) bar.Refresh();
+    }
+
+    // ---- 정예·우두머리 (FloorGenerator가 Awake 전에 정한다) ----
+    // 정예: 체력 두 배·공격 +1~2·보상 세 배 + 성질 하나. 몸이 크고 붉은 기운이 돈다.
+    public enum Affix { None, Frenzy, Venom, Tough, Swift, Leech }
+    [Header("정예·우두머리")]
+    public bool elite;
+    public Affix affix;
+    public bool boss;
+    float damageTaken = 1f;    // 받는 피해 배율 (단단함)
+    float lifesteal;           // 준 피해 중 회복하는 비율 (흡혈)
+    bool traitsApplied;
+
+    static string AffixName(Affix a) => a switch
+    {
+        Affix.Frenzy => "광폭한",
+        Affix.Venom => "독니의",
+        Affix.Tough => "단단한",
+        Affix.Swift => "재빠른",
+        Affix.Leech => "피를 빠는",
+        _ => "",
+    };
+
+    static string AffixHint(Affix a) => a switch
+    {
+        Affix.Frenzy => "자주 두 번 덤빈다",
+        Affix.Venom => "물리면 중독된다",
+        Affix.Tough => "피해를 덜 받는다",
+        Affix.Swift => "공격을 잘 피한다",
+        Affix.Leech => "때릴 때마다 체력을 빨아들인다",
+        _ => "",
+    };
+
+    void ApplyTraits()
+    {
+        if (traitsApplied) return;
+        traitsApplied = true;
+        if (boss)
+        {
+            expReward *= 8; goldMin += 20; goldMax += 40;
+            transform.localScale *= 1.9f;
+            splitOnDeath = false;
+            sight = Mathf.Max(sight, 6);
+            return;
+        }
+        if (!elite) return;
+        expReward *= 3; goldMin *= 2; goldMax = goldMax * 3 + 3;
+        transform.localScale *= 1.25f;
+        switch (affix)
+        {
+            case Affix.Frenzy: doubleAttackChance = Mathf.Max(doubleAttackChance, 0.35f); break;
+            case Affix.Venom: poisonChance = Mathf.Max(poisonChance, 0.4f); poisonTurns = Mathf.Max(poisonTurns, 4); break;
+            case Affix.Tough: damageTaken = 0.65f; break;
+            case Affix.Swift: evasion = Mathf.Min(0.5f, evasion + 0.15f); break;
+            case Affix.Leech: lifesteal = 0.5f; break;
+        }
+        if (!displayName.Contains("정예")) displayName = $"{AffixName(affix)} 정예 {displayName}";
+    }
+
+    // 정예의 붉은 기운 (작은 빛)
+    void AddEliteGlow()
+    {
+        if (!elite && !boss) return;
+        var l = new GameObject("EliteGlow").AddComponent<Light>();
+        l.transform.SetParent(transform, false);
+        l.transform.localPosition = Vector3.up * 1.5f;
+        l.type = LightType.Point;
+        l.color = boss ? new Color(0.8f, 0.2f, 1f) : new Color(1f, 0.2f, 0.12f);
+        l.range = boss ? 9f : 6f;
+        l.intensity = boss ? 6f : 4f;
+        l.shadows = LightShadows.None;
+    }
+
+    // ---- 성격: 같은 종족이어도 개체마다 조금씩 다르게 ----
+    bool brave;                // 쥐: 겁먹어도 달아나지 않는 녀석
+    Vector2Int home;           // 처음 있던 자리 (어슬렁거리는 범위의 중심)
+
+    void RollTemperament()
+    {
+        sight = Mathf.Max(2, sight + Random.Range(-1, 2));
+        brave = behavior == Behavior.Coward && Random.value < 0.3f;
+        if (behavior == Behavior.Charger) chargeCooldown = Random.Range(0, 3);
     }
 
     // 분열한 슬라임: 부모의 절반 능력치, 다시 분열하지 않음
@@ -201,6 +329,13 @@ public class Monster : Interactable
             TakeDamage(sneak, player, delay);
             return;
         }
+        // 힘보다 무거운 무기: 휘청이며 헛손질할 수 있다
+        if (!strike && player.MissChance > 0f && Random.value < player.MissChance)
+        {
+            GameLog.Add("무기가 무거워 휘청이며 헛손질했다.", GameLog.Info);
+            DamagePopup.Spawn(DamagePopup.Above(this), "헛손질", DamagePopup.Miss, 0.9f, impact);
+            return;
+        }
         if (!strike && Random.value < Evasion)
         {
             GameLog.Add($"{displayName}{Josa("이", "가")} 공격을 피했다.", GameLog.Info);
@@ -222,6 +357,18 @@ public class Monster : Interactable
         DamagePopup.Spawn(DamagePopup.Above(this), best ? $"{dmg}!" : dmg.ToString(), best ? DamagePopup.Big : DamagePopup.Hit, best ? 1.45f : 1.1f, impact);
         StartCoroutine(FlashRed(impact));
         TakeDamage(dmg, player, delay);
+
+        // 가벼운 무기(힘이 남는 무기): 가끔 재빠르게 한 번 더 때린다
+        if (!Dead && player.DoubleChance > 0f && Random.value < player.DoubleChance)
+        {
+            float again = delay + 0.22f;
+            if (mover != null) mover.PlayLunge(transform.position, again);
+            int dmg2 = player.RollAttack();
+            GameLog.Add("재빠르게 한 번 더!", GameLog.Good);
+            DamagePopup.Spawn(DamagePopup.Above(this), dmg2.ToString(), DamagePopup.Hit, 1.1f, again + LungeImpact);
+            StartCoroutine(FlashRed(again + LungeImpact));
+            TakeDamage(dmg2, player, again);
+        }
     }
 
     // 던진 돌·횃불·불꽃 물약에 맞는다 (피하지 못한다). fire면 불에 약한 적에게 두 배.
@@ -260,6 +407,7 @@ public class Monster : Interactable
 
     void TakeDamage(int amount, PlayerStats player, float delay)
     {
+        if (damageTaken < 1f) amount = Mathf.Max(1, Mathf.RoundToInt(amount * damageTaken));   // 단단한 정예
         Hp = Mathf.Max(0, Hp - amount);
         if (Asleep) { Asleep = false; deepSleep = 0; WakeUp(); }
         awake = true;
@@ -321,7 +469,7 @@ public class Monster : Interactable
             WakeUp();
             if (behavior == Behavior.Coward) CallPack();
         }
-        if (!awake) return;
+        if (!awake) { Wander(me, playerCell, moveSeconds); return; }
 
         if (stunned > 0)
         {
@@ -335,6 +483,7 @@ public class Monster : Interactable
             case Behavior.Charger: PlanCharger(me, playerCell, turn, moveSeconds); break;
             case Behavior.Skittish: PlanSkittish(me, playerCell, moveSeconds); break;
             case Behavior.Coward: PlanCoward(me, playerCell, turn, moveSeconds); break;
+            case Behavior.Spitter: PlanSpitter(me, playerCell, turn, moveSeconds); break;
             default: Chase(me, playerCell, turn, moveSeconds, null); break;
         }
     }
@@ -393,6 +542,7 @@ public class Monster : Interactable
     void WakeUp()
     {
         awake = true;
+        AnnounceIfElite();
         GameLog.Add($"{displayName}{Josa("이", "가")} 이쪽을 노려본다!", GameLog.Warn);
         if (hinted.Add(behavior))   // 종족마다 처음 한 번, 대처법 힌트
         {
@@ -465,7 +615,7 @@ public class Monster : Interactable
     void Charge(Vector2Int me, Vector2Int playerCell, float moveSeconds)
     {
         charging = false;
-        chargeCooldown = 4;
+        chargeCooldown = Random.Range(3, 6);   // 언제 다시 덮칠지 일정하지 않게
         ClearWarning();
         var floors = GridNav.Floors();
         var free = FreeCells(playerCell);
@@ -552,11 +702,93 @@ public class Monster : Interactable
         Chase(me, playerCell, 1, moveSeconds, LightSources.IsLitByFixed);
     }
 
+    // ---- 아직 나를 못 본 깨어 있는 녀석: 제자리 근처를 어슬렁거린다 (마주치는 곳이 매번 달라진다) ----
+
+    void Wander(Vector2Int me, Vector2Int playerCell, float moveSeconds)
+    {
+        if (Asleep || Random.value < 0.5f) return;
+        var free = FreeCells(playerCell);
+        var floors = GridNav.Floors();
+        var opts = new List<Vector2Int>();
+        foreach (var d in GridNav.Dirs8)
+        {
+            var n = me + d;
+            if (free.Contains(n) && GridNav.CornerFree(me, d, floors) && GridNav.Distance(n, home) <= 4) opts.Add(n);
+        }
+        if (opts.Count > 0) StartCoroutine(MoveTo(opts[Random.Range(0, opts.Count)], moveSeconds));
+    }
+
+    // ---- 침 뱉는 슬라임: 거리를 두고, 예고한 칸에 산성 침을 떨어뜨린다 ----
+
+    Vector2Int? spitTarget;
+    int spitCooldown;
+
+    void PlanSpitter(Vector2Int me, Vector2Int playerCell, int turn, float moveSeconds)
+    {
+        // 지난 턴에 예고한 칸에 침이 떨어진다 (그 칸에서 벗어났으면 피한 것)
+        if (spitTarget != null)
+        {
+            var t = spitTarget.Value;
+            spitTarget = null;
+            spitCooldown = Random.Range(2, 4);
+            ClearWarning();
+            var player = FindAnyObjectByType<PlayerStats>();
+            if (player != null && playerCell == t)
+            {
+                int dmg = Mathf.Max(1, Mathf.RoundToInt(Random.Range(AtkMin, AtkMax + 2) * (InLight ? LitDamage : DarkDamage)));
+                GameLog.Add($"{displayName}의 산성 침에 맞았다! {dmg}의 피해.", GameLog.Bad);
+                DamagePopup.Spawn(DamagePopup.Above(player), $"-{dmg}", DamagePopup.Hurt, 1.2f, moveSeconds);
+                player.Damage(dmg);
+                if (!player.Dead) GridClickMover.PlayAnim("Hit");
+            }
+            else GameLog.Add("산성 침이 바닥에 떨어져 지글거린다. (피했다)", GameLog.Good);
+            return;
+        }
+        if (spitCooldown > 0) spitCooldown--;
+        int dist = GridNav.Distance(me, playerCell);
+        if (GridNav.Adjacent(me, playerCell)) { WillAttack = true; return; }   // 붙으면 그냥 문다
+
+        // 2~4칸이고 사이가 트여 있으면 침을 예고한다
+        if (spitCooldown == 0 && dist >= 2 && dist <= 4 && Thrower.Trace(me, playerCell, out var land, out _) && land == playerCell)
+        {
+            spitTarget = playerCell;
+            ShowWarnTiles(new List<Vector2Int> { playerCell }, new Color(1f, 0.55f, 0.1f, 0.4f));
+            GameLog.Add($"{displayName}{Josa("이", "가")} 몸을 부풀린다… (주황 칸에서 벗어나라)", GameLog.Bad);
+            DamagePopup.Spawn(DamagePopup.Above(this), "!", DamagePopup.Big, 1.6f);
+            GridClickMover.StopWalking();
+            return;
+        }
+        if (moveEvery > 1 && turn % moveEvery != 0) return;
+        // 너무 가까우면 물러나고, 너무 멀면 다가간다
+        if (dist < 2)
+        {
+            var away = StepAway(me, playerCell, false);
+            if (away != null) { StartCoroutine(MoveTo(away.Value, moveSeconds)); return; }
+        }
+        if (dist > 3) Chase(me, playerCell, turn, moveSeconds, null);
+    }
+
+    void ShowWarnTiles(List<Vector2Int> cells, Color color)
+    {
+        ClearWarning();
+        foreach (var c in cells)
+        {
+            var q = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            Destroy(q.GetComponent<Collider>());
+            q.name = "Warning";
+            q.transform.position = GridTile.CellToWorld(c) + Vector3.up * 0.04f;
+            q.transform.rotation = Quaternion.Euler(90, 0, 0);
+            q.transform.localScale = Vector3.one * (GridTile.CellSize * 0.9f);
+            q.GetComponent<Renderer>().material = new Material(Shader.Find("Sprites/Default")) { color = color };
+            warnTiles.Add(q);
+        }
+    }
+
     // ---- 쥐: 다치면 달아나고, 동료를 부른다 ----
 
     void PlanCoward(Vector2Int me, Vector2Int playerCell, int turn, float moveSeconds)
     {
-        if (!fleeing && Hp <= MaxHp * 0.4f)
+        if (!fleeing && !brave && Hp <= MaxHp * 0.4f)
         {
             fleeing = true;
             GameLog.Add($"{displayName}{Josa("이", "가")} 겁에 질려 달아난다!", GameLog.Info);
@@ -650,6 +882,14 @@ public class Monster : Interactable
         DamagePopup.Spawn(DamagePopup.Above(player), $"-{dmg}", DamagePopup.Hurt, dmg >= AtkMax && AtkMax > AtkMin ? 1.4f : 1.15f, impact);
         ScreenEffects.PlayerHit((float)dmg / player.maxHp, impact);
         player.Damage(dmg);
+        if (!player.Dead) GridClickMover.PlayAnim("Hit");
+        if (lifesteal > 0f && Hp < MaxHp)   // 피를 빠는 정예
+        {
+            int heal = Mathf.Max(1, Mathf.RoundToInt(dmg * lifesteal));
+            Hp = Mathf.Min(MaxHp, Hp + heal);
+            if (bar != null) bar.Refresh();
+            DamagePopup.Spawn(DamagePopup.Above(this), $"+{heal}", DamagePopup.Poison, 0.9f, impact);
+        }
         if (!player.Dead && poisonChance > 0f && Random.value < poisonChance)
         {
             player.Poison(poisonTurns);

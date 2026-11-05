@@ -35,6 +35,7 @@ public class DeathScreen : MonoBehaviour
         {
             TowerMemory.ResetAll();
             Debug.Log("[TowerMemory] 기록 초기화");
+            RunState.NewRun();
             SceneManager.LoadScene(gameObject.scene.name);
         }
     }
@@ -83,7 +84,11 @@ public class DeathScreen : MonoBehaviour
         if (TowerMemory.TryBuy((TowerMemory.Upgrade)i)) Refresh();
     }
 
-    void WakeUp() => SceneManager.LoadScene(gameObject.scene.name);
+    void WakeUp()
+    {
+        RunState.NewRun();   // 다시 1층부터
+        SceneManager.LoadScene(gameObject.scene.name);
+    }
 
     // ---- UI 생성 ----
 

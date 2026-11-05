@@ -14,6 +14,7 @@ public class ItemDef
     public EquipSlot slot;
     public bool stackable;
     public int attackMin, attackMax;     // 무기일 때 더해지는 공격력
+    public int weight;                   // 무기 무게: 힘보다 무거우면 빗나가고 늦고, 힘이 남으면 연속 공격 (PlayerStats.WeaponNote)
 
     Sprite icon;
     public Sprite Icon => icon != null ? icon : (icon = Resources.Load<Sprite>("Icons/" + id));
@@ -34,7 +35,7 @@ public static class Items
     };
     public static readonly ItemDef Axe = new ItemDef
     {
-        id = "axe", name = "낡은 도끼", kind = ItemKind.Equipment, slot = EquipSlot.Weapon, attackMin = 2, attackMax = 7,
+        id = "axe", name = "낡은 도끼", kind = ItemKind.Equipment, slot = EquipSlot.Weapon, attackMin = 2, attackMax = 7, weight = 5,
         desc = "입구에 놓여 있던 도끼.\n나무를 벨 수 있고, 무기로도 쓸 만하다.",
     };
     public static readonly ItemDef Pickaxe = new ItemDef
@@ -59,13 +60,13 @@ public static class Items
     };
     public static readonly ItemDef Club = new ItemDef
     {
-        id = "club", name = "나무 몽둥이", kind = ItemKind.Equipment, slot = EquipSlot.Weapon, attackMin = 2, attackMax = 5,
-        desc = "굵은 가지를 깎아 만든 몽둥이.\n맨손보다는 낫다.",
+        id = "club", name = "나무 몽둥이", kind = ItemKind.Equipment, slot = EquipSlot.Weapon, attackMin = 2, attackMax = 5, weight = 2,
+        desc = "굵은 가지를 깎아 만든 몽둥이.\n가벼워서 휘두르기 쉽다.",
     };
     public static readonly ItemDef StoneAxe = new ItemDef
     {
-        id = "stoneaxe", name = "돌도끼", kind = ItemKind.Equipment, slot = EquipSlot.Weapon, attackMin = 3, attackMax = 8,
-        desc = "날카롭게 깨뜨린 돌날을 나뭇가지에 묶은 도끼.\n투박하지만 묵직하게 들어간다.",
+        id = "stoneaxe", name = "돌도끼", kind = ItemKind.Equipment, slot = EquipSlot.Weapon, attackMin = 3, attackMax = 8, weight = 7,
+        desc = "날카롭게 깨뜨린 돌날을 나뭇가지에 묶은 도끼.\n묵직하게 들어가지만, 힘이 모자라면 휘청인다.",
     };
     public static readonly ItemDef Key = new ItemDef
     {
@@ -167,4 +168,17 @@ public class Inventory
 
     // 처음부터 장착한 채로 시작 (가방을 거치지 않음)
     public void EquipDirect(ItemDef def) => equipped[def.slot] = def;
+
+    // 층을 오를 때 맡겨 두고 되돌려 받기 (RunState)
+    public List<(ItemDef def, int count)> ExportBag() => bag.ConvertAll(s => (s.def, s.count));
+    public List<ItemDef> ExportEquipped() => new List<ItemDef>(equipped.Values);
+
+    public void Import(List<(ItemDef def, int count)> items, List<ItemDef> worn)
+    {
+        bag.Clear();
+        equipped.Clear();
+        foreach (var (def, count) in items) bag.Add(new Stack { def = def, count = count });
+        foreach (var def in worn) equipped[def.slot] = def;
+        OnChanged?.Invoke();
+    }
 }

@@ -21,6 +21,12 @@ public class IntroSequence : MonoBehaviour
     {
         if (started) return;
         started = true;
+        if (RunState.Continuing)   // 계단을 올라온 것: 회차는 그대로, 도착 안내만
+        {
+            TurnManager.ResetTurn();
+            StartCoroutine(Arrive());
+            return;
+        }
         TowerMemory.BeginRun();
         TurnManager.ResetTurn();
         GameLog.Clear();
@@ -40,6 +46,18 @@ public class IntroSequence : MonoBehaviour
             go.name = $"Bones_{b.run}";
             go.GetComponent<BonesEvent>().record = b;
         }
+    }
+
+    IEnumerator Arrive()
+    {
+        yield return null;
+        RunState.ClearCarry();   // 이어받기 끝 (주인공은 이미 깨어나며 상태를 되돌려 받았다)
+        yield return new WaitForSeconds(0.4f);
+        GameLog.Add($"— {RunState.Floor}층 —", GameLog.Warn);
+        if (RunState.IsBossFloor)
+            GameLog.Add(RunState.Floor == RunState.TopFloor ? "탑의 꼭대기다. 무언가 거대한 것이 숨 쉬고 있다…" : "공기가 무겁다. 이 층 어딘가에 우두머리가 있다…", GameLog.Bad);
+        else if (RunState.IsMerchantFloor)
+            GameLog.Add("어딘가에서 고블린 상인의 흥얼거림이 들린다.", GameLog.Info);
     }
 
     IEnumerator Intro()

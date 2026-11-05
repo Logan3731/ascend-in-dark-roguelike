@@ -110,7 +110,7 @@ public class CraftUI : MonoBehaviour
             icon.sprite = r.result.Icon;
             UIKit.Place(icon.rectTransform, new Vector2(0, 0.5f), new Vector2(14, 0), new Vector2(80, 80));
 
-            string stat = r.result.attackMin > 0 ? $"   <color=#dcb86b>공격 +{r.result.attackMin}~{r.result.attackMax}</color>" : "";
+            string stat = r.result.attackMin > 0 ? $"   <color=#dcb86b>공격 +{r.result.attackMin}~{r.result.attackMax}</color>   <size=18><color=#9e9480>무게 {r.result.weight}</color></size>" : "";
             var name = UIKit.Text(box.rectTransform, $"{r.result.name}{stat}", 24, TextAnchor.UpperLeft, new Color(0.95f, 0.9f, 0.8f));
             UIKit.Place(name.rectTransform, new Vector2(0, 1), new Vector2(110, -12), new Vector2(420, 32));
             var cost = UIKit.Text(box.rectTransform, "", 19, TextAnchor.UpperLeft, GameLog.Info);

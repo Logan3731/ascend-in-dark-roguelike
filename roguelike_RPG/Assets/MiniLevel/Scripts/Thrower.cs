@@ -74,6 +74,7 @@ public static class Thrower
         if (torch) left = p.ReleaseTorch();
         else p.Bag.Remove(what);
         GameLog.Add($"{what.name}{Korean.Josa(what.name, "을", "를")} 던졌다.", GameLog.Info);
+        GridClickMover.PlayAnim("Throw");
 
         // 맞힌 적에게 먼저 피해 (쓰러지면 이번 턴에 덤비지 못한다)
         // 물약은 맞힌 적에게 피해를 주지 않고, 깨진 자리 주변에 효과가 퍼진다 (이번 턴 적의 행동보다 먼저)
