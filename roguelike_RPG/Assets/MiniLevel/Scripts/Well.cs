@@ -22,7 +22,7 @@ public class Well : Prop
         SpendTurn(player, transform.position);
         float r = Random.value;
         if (r < 0.25f) { GameLog.Add("물이 따뜻하게 빛난다. 상처가 아문다.", GameLog.Good); player.Heal(25); }
-        else if (r < 0.45f) { GameLog.Add("맑은 기운이 몸을 채운다. (기력 회복)", GameLog.Good); player.RestoreMp(); }
+        else if (r < 0.45f) { GameLog.Add("맑은 기운이 몸을 채운다.", GameLog.Good); player.RestoreMp(); }
         else if (r < 0.65f) { GameLog.Add("물 한 모금에 배가 든든해진다.", GameLog.Good); player.Feed(30); }
         else if (r < 0.75f) { var p = Potions.RandomPotion(); player.Bag.Add(p); GameLog.Add($"물속에서 {p.name}{Korean.Josa(p.name, "이", "가")} 떠올랐다!", GameLog.Good); }
         else GameLog.Add("퐁당. 동전이 가라앉았다… 아무 일도 일어나지 않았다.", GameLog.Info);

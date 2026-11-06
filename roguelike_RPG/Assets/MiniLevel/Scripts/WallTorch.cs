@@ -34,7 +34,7 @@ public class WallTorch : Interactable, LightSources.ISource
             return;
         }
         SetLit(true);
-        GridClickMover.PlayAnim("LightTorch");
+        GridClickMover.PlayAction("LightTorch", GridClickMover.LightTorchSeconds);
         GameLog.Add("벽 횃불에 불을 옮겨 붙였다. 주변이 밝아진다.", GameLog.Good);
     }
 

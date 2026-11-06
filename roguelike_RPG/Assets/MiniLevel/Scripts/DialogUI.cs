@@ -61,8 +61,31 @@ public class DialogUI : MonoBehaviour
         instance.MakeButton("확인", true, Submit);
     }
 
+    // [Space] = 첫 번째 선택지 (확인·연다 등). 이름 입력 중에는 글자로 쓴다.
+    // 1·2·3… = 그 순서의 선택지
+    void Update()
+    {
+        if (!panel.activeSelf || input.gameObject.activeSelf || Time.frameCount == openedFrame) return;
+        var kb = UnityEngine.InputSystem.Keyboard.current;
+        if (kb == null) return;
+        int pick = kb.spaceKey.wasPressedThisFrame ? 0
+            : kb.digit1Key.wasPressedThisFrame ? 0 : kb.digit2Key.wasPressedThisFrame ? 1
+            : kb.digit3Key.wasPressedThisFrame ? 2 : kb.digit4Key.wasPressedThisFrame ? 3 : -1;
+        if (pick < 0) return;
+        var buttons = buttonRow.GetComponentsInChildren<Button>();
+        if (kb.spaceKey.wasPressedThisFrame)
+        {
+            foreach (var b in buttons) if (b.interactable) { b.onClick.Invoke(); return; }
+            return;
+        }
+        if (pick < buttons.Length && buttons[pick].interactable) buttons[pick].onClick.Invoke();
+    }
+
+    int openedFrame = -1;
+
     void Open(string prompt)
     {
+        openedFrame = Time.frameCount;
         foreach (Transform b in buttonRow) Destroy(b.gameObject);
         input.gameObject.SetActive(false);
         buttonRow.anchoredPosition = new Vector2(0, 26);
@@ -70,8 +93,11 @@ public class DialogUI : MonoBehaviour
         panel.SetActive(true);
     }
 
+    public static int ClosedFrame { get; private set; } = -1;   // 이 프레임의 숫자 키는 대화창이 썼다 (단축키 칸이 다시 열지 않게)
+
     void Close()
     {
+        ClosedFrame = Time.frameCount;
         input.onSubmit.RemoveAllListeners();
         panel.SetActive(false);
     }

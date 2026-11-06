@@ -32,7 +32,3 @@ roguelike_RPG/crashlytics-build.properties
 # OS
 Thumbs.db
 .DS_Store
-
-# 레퍼런스 게임 원본 파일 (분석용, 저장소에 올리지 않음)
-*.apk
-darkness_assets/

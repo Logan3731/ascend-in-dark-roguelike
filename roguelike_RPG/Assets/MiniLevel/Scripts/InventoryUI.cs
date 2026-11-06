@@ -81,12 +81,19 @@ public class InventoryUI : MonoBehaviour
                 else Close();
             }
             else if (kb.iKey.wasPressedThisFrame || kb.tabKey.wasPressedThisFrame) Close();
+            else if (kb.spaceKey.wasPressedThisFrame && confirm.activeSelf) UseConfirmed();   // [Space] = 확인 (먹는다·마신다·던진다…)
+            else if (held == null && !confirm.activeSelf && hovered != null && hovered.def != null && QuickBar.CanHold(hovered.def))
+            {
+                // 아이템에 마우스를 올리고 1~4: 단축키 칸에 등록
+                int n = QuickBar.PressedSlot(kb);
+                if (n >= 0) { QuickBar.Assign(n, hovered.def); ShowFloat($"{n + 1}번 칸에 {hovered.def.name}"); }
+            }
 
             var mouse = MouseLocal();
             if (held != null && returning == null) heldIcon.rectTransform.anchoredPosition = mouse;
             if (tooltip.gameObject.activeSelf) PlaceNearMouse(tooltip, mouse);
         }
-        else if ((kb.iKey.wasPressedThisFrame || kb.tabKey.wasPressedThisFrame) && !DialogUI.IsOpen && !PauseMenu.IsOpen && !TitleScreen.IsOpen && !CraftUI.IsOpen && !ShopUI.IsOpen && !player.Dead) Open();
+        else if ((kb.iKey.wasPressedThisFrame || kb.tabKey.wasPressedThisFrame) && !DialogUI.IsOpen && !PauseMenu.IsOpen && !TitleScreen.IsOpen && !CraftUI.IsOpen && !ShopUI.IsOpen && !player.Dead && !GridClickMover.InputLocked) Open();   // 연출 중(적 발견·상호작용)에는 열지 않는다
     }
 
     public void Open()
@@ -151,21 +158,31 @@ public class InventoryUI : MonoBehaviour
         if (def == null || held != null || confirm.activeSelf) { HideTooltip(); return; }
 
         string kind = def.kind == ItemKind.Food || def.kind == ItemKind.Torch || def.kind == ItemKind.Potion ? $"소모품 · {player.Bag.Count(def)}개"
+            : def.IsWeapon ? $"장비 · {(def.oneHanded ? "한손 무기 (무기·보조 칸)" : "양손 무기")}"
             : def.slot != EquipSlot.None ? $"장비 · {SlotName(def.slot)} 칸"
+            : def == Items.Dart ? $"던지는 무기 · {player.Bag.Count(def)}개"
             : def.kind == ItemKind.Material ? $"재료 · {player.Bag.Count(def)}개"
             : "도구";
         var s = $"<size=24><color=#dcb86b>{def.name}</color></size>\n<color=#9e9480>{kind}</color>\n\n{def.desc}";
-        if (def.attackMin > 0) s += $"\n\n<color=#dcb86b>공격 +{def.attackMin}~{def.attackMax}</color>\n{player.WeaponNote(def)}";
+        if (def.attackMin > 0 && def.IsWeapon) s += $"\n\n<color=#dcb86b>공격 +{def.attackMin}~{def.attackMax}</color>\n{player.WeaponNote(def)}";
+        if (def.IsWeapon && def.oneHanded)
+            s += $"\n<color=#9e9480>보조칸: {Mathf.RoundToInt(PlayerStats.OffhandChance * 100)}% 확률로 추가 타격 (공격력 {Mathf.RoundToInt(PlayerStats.OffhandWeaponMult * 100)}%)</color>";
+        if (def.slot == EquipSlot.Offhand)
+            s += $"\n\n<color=#dcb86b>추가 타격 {def.attackMin}~{def.attackMax}</color> <color=#9e9480>({Mathf.RoundToInt(PlayerStats.OffhandChance * 100)}% 확률)</color>" +
+                 (def.stunChance > 0f ? $"\n<color=#9ed0ff>맞으면 {Mathf.RoundToInt(def.stunChance * 100)}% 확률로 기절</color>" : "");
+        if (def == Items.Dart) s += $"\n\n<color=#dcb86b>맞으면 피해 {Thrower.DartMin}~{Thrower.DartMax}</color>";
         if (def.kind == ItemKind.Food) s += $"\n\n<color=#a8d46f>허기 +{player.foodRestore}</color>";
         if (def.kind == ItemKind.Torch && player.HasTorch) s += $"\n\n<color=#f08a2b>지금 쓰는 횃불 내구도 {player.Torch} / {player.maxTorch}</color>";
         string hint = equipped ? "클릭하거나 끌어서 가방에 넣으면 벗는다"
             : def == Items.Stone ? "클릭: 던지기 (재료로도 쓴다)"
+            : def == Items.Dart ? "클릭: 던지기 ([R]로도 던진다)"
             : def.kind == ItemKind.Potion ? "클릭: 마시거나 던진다"
             : Usable(def) ? "클릭: 사용"
             : def.slot != EquipSlot.None ? "클릭하거나 끌어서 장비 칸에 넣는다"
             : def.kind == ItemKind.Material ? "시작한 방의 모루에서 쓸 수 있다"
             : "아직 쓸 곳이 없다";
         s += $"\n\n<color=#9ed0ff>{hint}</color>";
+        if (!equipped && QuickBar.CanHold(def)) s += "\n<color=#9ed0ff>[1~4] 단축키 칸에 넣는다</color>";
 
         tooltipText.text = s;
         tooltip.sizeDelta = new Vector2(360, tooltip.sizeDelta.y);           // 너비를 먼저 정해야 줄바꿈 높이가 맞는다
@@ -184,7 +201,7 @@ public class InventoryUI : MonoBehaviour
     static string SlotName(EquipSlot s) => s switch
     {
         EquipSlot.Hat => "모자", EquipSlot.Top => "상의", EquipSlot.Bottom => "하의",
-        EquipSlot.TopBottom => "상의·하의", EquipSlot.Shoes => "신발", EquipSlot.Weapon => "무기",
+        EquipSlot.TopBottom => "상의·하의", EquipSlot.Shoes => "신발", EquipSlot.Weapon => "무기", EquipSlot.Offhand => "보조",
         _ => "",
     };
 
@@ -213,6 +230,9 @@ public class InventoryUI : MonoBehaviour
         else if (def == Items.Stone)
             body = "<size=26><color=#dcb86b>돌멩이를 던질까?</color></size>\n\n" +
                    $"던질 칸을 고른다 ({Thrower.Range}칸까지)\n<color=#dcb86b>맞으면 피해 2~4</color>\n<color=#9e9480>떨어진 돌은 다시 주울 수 있다</color>";
+        else if (def == Items.Dart)
+            body = "<size=26><color=#dcb86b>다트를 던질까?</color></size>\n\n" +
+                   $"던질 칸을 고른다 ({Thrower.Range}칸까지)\n<color=#dcb86b>맞으면 피해 {Thrower.DartMin}~{Thrower.DartMax} (다트는 부러진다)</color>\n<color=#9e9480>빈 바닥에 떨어지면 다시 주울 수 있다</color>";
         else if (!p.TorchHeld)
             body = $"<size=26><color=#dcb86b>{def.name}{Korean.Josa(def.name, "을", "를")} 들까?</color></size>\n\n" +
                    "<color=#f08a2b>주변이 밝아진다</color>\n" +
@@ -222,7 +242,7 @@ public class InventoryUI : MonoBehaviour
                    "<color=#9e9480>주변이 어두워진다</color>\n" +
                    "내구도가 줄지 않는다";
         confirmText.text = body;
-        confirmUse.GetComponentInChildren<Text>().text = def.kind == ItemKind.Food ? "먹는다" : def.kind == ItemKind.Potion ? "마신다" : def == Items.Stone ? "던진다" : p.TorchHeld ? "내린다" : "든다";
+        confirmUse.GetComponentInChildren<Text>().text = def.kind == ItemKind.Food ? "먹는다" : def.kind == ItemKind.Potion ? "마신다" : def == Items.Stone || def == Items.Dart ? "던진다" : p.TorchHeld ? "내린다" : "든다";
         confirmThrow.gameObject.SetActive(def.kind == ItemKind.Potion);
 
         confirm.SetActive(true);
@@ -246,7 +266,7 @@ public class InventoryUI : MonoBehaviour
         if (def.kind == ItemKind.Food) player.EatFood();
         else if (def.kind == ItemKind.Torch) player.ToggleTorch();
         else if (def.kind == ItemKind.Potion) Potions.Drink(player, def);
-        else if (def == Items.Stone) { Close(); Thrower.Begin(Items.Stone); }
+        else if (def == Items.Stone || def == Items.Dart) { Close(); Thrower.Begin(def); }
     }
 
     void ThrowConfirmed()
@@ -260,8 +280,8 @@ public class InventoryUI : MonoBehaviour
 
     // ---- 장비 들기·놓기 ----
 
-    static bool CanPlace(ItemDef def, EquipSlot target) =>
-        def.slot == target || (def.slot == EquipSlot.TopBottom && (target == EquipSlot.Top || target == EquipSlot.Bottom));
+    bool CanPlace(ItemDef def, EquipSlot target) =>
+        def.Fits(target) && !(target == EquipSlot.Offhand && player.Bag.Equipped(EquipSlot.Weapon) is ItemDef main && main.TwoHanded);   // 양손 무기를 들면 보조칸은 못 쓴다
 
     EquipSlot SlotOf(InventorySlotView view)
     {
@@ -297,7 +317,7 @@ public class InventoryUI : MonoBehaviour
         if (heldFrom != EquipSlot.None) { ReturnHeld(false); return; }   // 이미 입고 있는 장비를 같은 자리에
         var def = held;
         ClearHeld();
-        if (player.Bag.Equip(def)) GameLog.Add($"{def.name}{Korean.Josa(def.name, "을", "를")} 장착했다.", GameLog.Info);
+        if (player.Bag.Equip(def, target)) GameLog.Add($"{def.name}{Korean.Josa(def.name, "을", "를")} 장착했다.", GameLog.Info);
         else ShowFloat("가방이 가득 찼습니다");
         Refresh();
     }
@@ -351,7 +371,7 @@ public class InventoryUI : MonoBehaviour
     // ---- 칸 클릭·끌기 ----
 
     // 클릭하면 사용 확인 창이 뜨는 것 (먹기·횃불·물약·돌 던지기)
-    static bool Usable(ItemDef d) => d.kind == ItemKind.Food || d.kind == ItemKind.Torch || d.kind == ItemKind.Potion || d == Items.Stone;
+    static bool Usable(ItemDef d) => d.kind == ItemKind.Food || d.kind == ItemKind.Torch || d.kind == ItemKind.Potion || d == Items.Stone || d == Items.Dart;
 
     void ClickBagSlot(InventorySlotView slot)
     {
@@ -494,6 +514,7 @@ public class InventoryUI : MonoBehaviour
         float ex = 470, ey = -130, s = 96, gap = 120;
         AddEquip(pr, EquipSlot.Hat, "모자", ex, ey, s);
         AddEquip(pr, EquipSlot.Weapon, "무기", ex - gap, ey - gap, s);
+        AddEquip(pr, EquipSlot.Offhand, "보조", ex - gap, ey - gap * 2, s);   // 방패 또는 한손 무기
         AddEquip(pr, EquipSlot.Top, "상의", ex, ey - gap, s);
         AddEquip(pr, EquipSlot.Bottom, "하의", ex, ey - gap * 2, s);
         AddEquip(pr, EquipSlot.Shoes, "신발", ex, ey - gap * 3, s);

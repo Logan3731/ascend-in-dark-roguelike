@@ -8,7 +8,7 @@ using UnityEngine;
 // 마시든 던지든 한 번 써 본 색은 그 회차 동안 이름이 드러난다.
 public static class Potions
 {
-    public enum Effect { Heal, Poison, Fullness, Sight, Fire, Sleep }
+    public enum Effect { Heal, Poison, Fullness, Sight, Fire, Sleep, Strength }
 
     public static readonly ItemDef Red = Make("potion_red", "붉은 물약");
     public static readonly ItemDef Blue = Make("potion_blue", "푸른 물약");
@@ -35,7 +35,7 @@ public static class Potions
     public static void NewRun(int seed)
     {
         var rng = new System.Random(seed);
-        var others = new List<Effect> { Effect.Poison, Effect.Fullness, Effect.Sight, Effect.Fire, Effect.Sleep };
+        var others = new List<Effect> { Effect.Poison, Effect.Fullness, Effect.Sight, Effect.Fire, Effect.Sleep, Effect.Strength };
         Shuffle(others, rng);
         var effects = new List<Effect> { Effect.Heal };
         effects.AddRange(others.GetRange(0, All.Length - 1));
@@ -67,6 +67,7 @@ public static class Potions
         Effect.Fullness => "포만의 물약",
         Effect.Sight => "밝은 눈의 물약",
         Effect.Fire => "불꽃 물약",
+        Effect.Strength => "힘의 물약",
         _ => "잠의 물약",
     };
 
@@ -76,7 +77,8 @@ public static class Potions
         Effect.Poison => "마시면: 6턴 동안 중독된다.",
         Effect.Fullness => "마시면: 허기 +50.",
         Effect.Sight => "마시면: 15턴 동안 내 주변이 환해진다. (빛 안의 적은 약해진다)",
-        Effect.Fire => "마시면: 속이 타들어 간다. 체력 -8.",
+        Effect.Fire => "마시면: 몸에 불이 붙는다.",
+        Effect.Strength => "마시면: 힘 +1.",
         _ => $"마시면: {SleepTurns}턴 동안 잠든다. 맞으면 깬다.",
     };
 
@@ -86,7 +88,8 @@ public static class Potions
         Effect.Poison => $"던지면: 맞은 곳 주변의 적이 {EnemyPoisonTurns}턴 동안 중독된다. (턴마다 2)",
         Effect.Fullness => "던지면: 바닥에 쏟아질 뿐이다.",
         Effect.Sight => "던지면: 터진 자리가 8턴 동안 환해진다. (빛 안의 적은 약해진다)",
-        Effect.Fire => "던지면: 불길이 번져 주변 적에게 불 피해 5~8. 불에 약한 적은 두 배.",
+        Effect.Fire => "던지면: 불길이 번져 주변 적에게 불 피해 5~8, 불이 붙는다.",
+        Effect.Strength => "던지면: 바닥에 쏟아질 뿐이다.",
         _ => $"던지면: 주변 적이 {EnemySleepTurns}턴 동안 깊이 잠든다. 그사이 때리면 기습!",
     };
 
@@ -130,7 +133,8 @@ public static class Potions
         if (!effect.ContainsKey(def) || !p.Bag.Remove(def)) return;
         var e = effect[def];
         Learn(def, e);
-        GridClickMover.PlayAnim("Drink");
+        GridClickMover.PlayAction("Drink", GridClickMover.DrinkSeconds);
+        Sfx.Play("drink", 0.3f);
 
         switch (e)
         {
@@ -151,8 +155,10 @@ public static class Potions
                 break;
             case Effect.Fire:
                 GameLog.Add("목구멍이 타들어 간다!", GameLog.Bad);
-                DamagePopup.Spawn(DamagePopup.Above(p), "-8", DamagePopup.Hurt, 1.2f);
-                p.Damage(8);
+                Fire.SetOnFire(p, Fire.DrinkBurnTurns, p);
+                break;
+            case Effect.Strength:
+                p.AddStrength(1);
                 break;
             case Effect.Sleep:
                 var mover = p.GetComponent<GridClickMover>();
@@ -223,7 +229,11 @@ public static class Potions
             case Effect.Fire:
                 GameLog.Add("물약이 터지며 불길이 번진다!", GameLog.Good);
                 PotionGlow.Create(land, 3, new Color(1f, 0.45f, 0.15f));
+                Fire.Ignite(land, Fire.PotionRadius, p);
                 foreach (var m in targets) m.HitByThrow(p, Random.Range(5, 9), "불꽃 물약", delay, true);
+                break;
+            case Effect.Strength:
+                GameLog.Add("물약이 바닥에 스며들었다. 아깝다…", GameLog.Info);
                 break;
             case Effect.Sleep:
                 if (targets.Count == 0) GameLog.Add("달큰한 안개가 피어올랐다가 흩어졌다.", GameLog.Info);

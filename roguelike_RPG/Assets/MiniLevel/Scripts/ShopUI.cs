@@ -48,7 +48,7 @@ public class ShopUI : MonoBehaviour
         player.AddGold(-w.price);
         w.stock--;
         w.give(player);
-        GameLog.Add($"고블린에게서 {w.label}{Korean.Josa(w.label, "을", "를")} 샀다. (-{w.price} 골드)", GameLog.Good);
+        GameLog.Add($"고블린에게서 {w.label}{Korean.Josa(w.label, "을", "를")} 샀다.", GameLog.Good);
         Build();   // 수량·골드 다시 그리기
     }
 

@@ -14,6 +14,7 @@ public class Door : Interactable
 
     public Kind kind;
     public bool locked;
+    public bool sealedByBoss;   // 엘리트 층의 문: 열쇠로는 안 열리고, 엘리트를 쓰러뜨리면 풀린다 (Unseal)
     public bool IsOpen { get; private set; }
 
     static readonly Dictionary<Vector2Int, Door> all = new Dictionary<Vector2Int, Door>();
@@ -96,6 +97,7 @@ public class Door : Interactable
     {
         if (IsOpen) return;
         if (!locked) { Push(player, false); return; }
+        if (sealedByBoss) { GameLog.Add("굳게 봉인된 문이다.", GameLog.Warn); return; }
 
         int keys = player.Bag.Count(Items.Key);
         if (keys <= 0)
@@ -103,7 +105,7 @@ public class Door : Interactable
             GameLog.Add("잠긴 철문이다. 열쇠가 있어야 열 수 있다.", GameLog.Warn);
             return;
         }
-        DialogUI.Show($"잠긴 철문이다. 열쇠를 쓸까?\n(가진 열쇠 {keys}개 · 쓰면 자물쇠에 남는다)",
+        DialogUI.Show($"잠긴 철문이다. 열쇠를 쓸까?\n가진 열쇠 {keys}개",
             new DialogUI.Choice("열쇠를 쓴다", () =>
             {
                 player.Bag.Remove(Items.Key);
@@ -112,6 +114,25 @@ public class Door : Interactable
                 Push(player, true);
             }),
             new DialogUI.Choice("그만둔다", null));
+    }
+
+    // 인간형 몬스터가 연다 (한 턴, 철문도 한 번에)
+    public void OpenByMonster(Monster who)
+    {
+        if (IsOpen || locked) return;
+        Open();
+        if (who != null && !who.Unseen) GameLog.Add($"{who.displayName}{Korean.Josa(who.displayName, "이", "가")} 문을 열었다.", GameLog.Warn);
+    }
+
+    // 엘리트를 쓰러뜨렸다: 봉인이 풀린다 (자물쇠·쇠사슬이 떨어진다)
+    public void Unseal()
+    {
+        sealedByBoss = false;
+        locked = false;
+        foreach (var t in GetComponentsInChildren<Transform>())
+            if (t != null && (t.name == "Lock" || t.name == "Chain")) Destroy(t.gameObject);
+        GameLog.Add("어딘가에서 봉인이 풀리는 소리가 났다.", GameLog.Good);
+        CameraFollowOcclusion.Shake(0.2f, 0.3f);
     }
 
     // 한 턴을 써서 문을 민다 (철문은 두 번 밀어야 열린다). 그사이 몬스터도 움직인다.
@@ -132,21 +153,22 @@ public class Door : Interactable
             GameLog.Add(kind == Kind.Wood ? "나무문을 열었다." : "철문이 끼이익 열렸다.", GameLog.Info);
         }
         TurnResolver.ResolveAttacks(player, null);
-        TurnResolver.BusyUntil = Mathf.Max(TurnResolver.BusyUntil, Time.time + 0.35f);
+        TurnResolver.BusyUntil = Mathf.Max(TurnResolver.BusyUntil, Time.time + GridClickMover.TurnSeconds);   // 미는 데 한 턴 = 한 칸 걷는 시간
     }
 
     void Open()
     {
         IsOpen = true;
+        Sfx.Play("door_open");
         GetComponent<GridBlocker>().enabled = false;
         foreach (var c in GetComponentsInChildren<Collider>()) c.enabled = false;   // 열린 문 너머 바닥을 누를 수 있게
-        StartCoroutine(Swing(openYaw, 0.4f));
+        StartCoroutine(Swing(openYaw, GridClickMover.TurnSeconds * 0.9f));
     }
 
     IEnumerator Nudge()
     {
-        yield return Swing(openYaw * 0.12f, 0.15f);
-        yield return Swing(0f, 0.2f);
+        yield return Swing(openYaw * 0.12f, GridClickMover.TurnSeconds * 0.4f);
+        yield return Swing(0f, GridClickMover.TurnSeconds * 0.5f);
     }
 
     // 두 문짝을 마주 보게 돌린다 (왼쪽은 yaw, 오른쪽은 -yaw → 둘 다 같은 쪽으로 젖혀진다)

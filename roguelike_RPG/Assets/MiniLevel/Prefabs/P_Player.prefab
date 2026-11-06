@@ -143,7 +143,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c65e4fe4d3250ab479d78f726cbdf6c8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::GridClickMover
-  moveSeconds: 0.4
+  moveSeconds: 0.7
   targetMarker: {fileID: 0}
   animator: {fileID: 3095530516904889648}
 --- !u!114 &8136298551387608996
@@ -176,7 +176,7 @@ MonoBehaviour:
   fistMin: 1
   fistMax: 2
   torchLightCells: 3
-  strikeCost: 10
+  skillCostCut: 0
   stepsPerRegen: 8
   torchRange: 34
   torchIntensity: 38

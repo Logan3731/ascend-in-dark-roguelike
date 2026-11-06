@@ -25,6 +25,7 @@ public class PlayerStats : MonoBehaviour, LightSources.ISource
     [Header("소지품")]
     public int startFood = 2;
     public int foodRestore = 30;
+    public const int StartDarts = 5;
 
     public string PlayerName { get; set; } = "";
     public int Hp { get; private set; }
@@ -39,6 +40,7 @@ public class PlayerStats : MonoBehaviour, LightSources.ISource
     public bool HasTools => Bag.Count(Items.Axe) > 0 && Bag.Count(Items.Pickaxe) > 0;
     public readonly Inventory Bag = new Inventory();   // 가방 + 장비
     public ItemDef Weapon => Bag.Equipped(EquipSlot.Weapon);
+    public ItemDef Offhand => Bag.Equipped(EquipSlot.Offhand);   // 보조칸: 방패 또는 한손 무기
     public int Karma => TowerMemory.Karma;   // + 선 / - 악, 복제가 바뀌어도 쌓인다 (플레이어에게는 숨김)
     public int Exp { get; private set; }     // 이번 생에서 쌓은 전투 경험 -> 죽으면 경험의 정수가 된다
     public bool Dead => Hp <= 0;
@@ -92,6 +94,7 @@ public class PlayerStats : MonoBehaviour, LightSources.ISource
 
     public event Action OnChanged;
     public event Action OnDied;
+    public void NotifyChanged() => OnChanged?.Invoke();   // HUD를 다시 그리게 (돋보기 켜고 끄기 등)
 
     void Awake()
     {
@@ -99,7 +102,8 @@ public class PlayerStats : MonoBehaviour, LightSources.ISource
         Hp = maxHp; Mp = maxMp; Hunger = maxHunger;
         Bag.EquipDirect(Items.Tunic);          // 남자 주인공: 누더기 튜닉 하나로 시작
         Bag.Add(Items.Food, startFood);
-        RunState.RestoreInto(this);            // 계단을 올라왔으면 아래층의 상태를 그대로 이어받는다
+        Bag.Add(Items.Dart, StartDarts);       // 다트 5개 (아래 RestoreInto가 가방을 덮어쓰므로 새 회차에만 남는다)
+        RunState.RestoreInto(this);          // 계단을 올라왔으면 아래층의 상태를 그대로 이어받는다
         Bag.OnChanged += () => OnChanged?.Invoke();
 
         // 횃불은 손뼈 아래에 있어서 직렬화 참조가 깨지기 쉽다 -> 실행 시 자식에서 찾는다
@@ -113,13 +117,13 @@ public class PlayerStats : MonoBehaviour, LightSources.ISource
 
     // 층을 올라왔을 때 아래층 상태 되돌리기 (RunState.RestoreInto)
     public void RestoreFrom(int maxHp, int hp, int maxMp, int mp, int maxHunger, int hunger, int torch, bool torchHeld,
-                            int gold, int exp, int level, int strength, int fistMin, int fistMax, int strikeCost, int stepsPerRegen,
+                            int gold, int exp, int level, int strength, int fistMin, int fistMax, int skillCostCut, int stepsPerRegen,
                             int poison, string playerName)
     {
         this.maxHp = maxHp; Hp = hp; this.maxMp = maxMp; Mp = mp; this.maxHunger = maxHunger; Hunger = hunger;
         Torch = torch; TorchHeld = torchHeld; Gold = gold; Exp = exp; Level = level;
         this.strength = strength; this.fistMin = fistMin; this.fistMax = fistMax;
-        this.strikeCost = strikeCost; this.stepsPerRegen = stepsPerRegen;
+        this.skillCostCut = skillCostCut; this.stepsPerRegen = stepsPerRegen;
         PoisonTurns = poison; PlayerName = playerName;
     }
 
@@ -127,9 +131,7 @@ public class PlayerStats : MonoBehaviour, LightSources.ISource
     void ApplyUpgrades()
     {
         maxHp += 10 * TowerMemory.Level(TowerMemory.Upgrade.MaxHp);
-        strength += TowerMemory.Level(TowerMemory.Upgrade.Strength);
-        int fist = TowerMemory.Level(TowerMemory.Upgrade.Fist);
-        fistMin += fist; fistMax += fist;
+        // 힘·맨손 공격 강화는 쓰지 않는다 (힘은 힘의 물약·힘의 책으로만, 공격력은 무기로만)
         maxHunger += 15 * TowerMemory.Level(TowerMemory.Upgrade.Hunger);
         startFood += TowerMemory.Level(TowerMemory.Upgrade.StartFood);
     }
@@ -152,37 +154,97 @@ public class PlayerStats : MonoBehaviour, LightSources.ISource
 
     void Start()
     {
+        Bag.onAdded = ShowItemIntro;   // 시작 소지품·이월된 가방은 여기 전에 들어와서 띄우지 않는다
         ApplyTorchVisual();
         OnChanged?.Invoke();
     }
 
-    // ---- 기력·강타 / 걸으며 회복 / 이번 생의 레벨 (Darkness Survival의 순환에서 따옴) ----
+    // ---- 기력·스킬 / 걸으며 회복 / 이번 생의 레벨 ----
+    // [Q] 3연격: 다음 공격이 세 번 들어간다 (타격마다 회피·막기를 따로 굴린다).
+    // [W] 점프 찍기: 제자리에서 한 턴, 주변 8칸의 적에게 공격력만큼 피해 + 기절.
+    // 둘 다 기력을 쓰고, 쓴 뒤 몇 턴 동안 다시 못 쓴다 (HUD 버튼 아래 점 하나 = 2턴).
 
-    [Header("기력·강타")]
-    public int strikeCost = 10;      // [Q] 강타: 다음 공격 두 배 + 피할 수 없음
+    public const int TripleCost = 8;            // 3연격 기력
+    public const int TripleCooldown = 6;        // 3연격 쿨타임(턴) → 점 3개
+    public const int TripleHits = 3;
+    public const float TripleHitMult = 0.7f;    // 3연격 한 타의 피해 배율 (세 번 다 맞으면 약 2.1배)
+    public const int SlamCost = 12;             // 점프 찍기 기력
+    public const int SlamCooldown = 10;         // 점프 찍기 쿨타임(턴) → 점 5개
+    public const int SlamStunTurns = 2;         // 기절: 찍은 그 턴 + 다음 한 턴 동안 움직이지도 때리지도 못한다
+    public const int TurnsPerDot = 2;           // 쿨타임 점 하나 = 2턴
+    public const int MinSkillCost = 4;          // 퍽으로 줄여도 이 아래로는 안 내려간다
+
+    [Header("기력·스킬")]
+    public int skillCostCut;         // 레벨 업 퍽(기술)으로 줄인 스킬 비용
     public int stepsPerRegen = 8;    // 이만큼 걸을 때마다 HP +1 (공격받지 않은 걸음, 굶주리면 안 됨)
-    public bool StrikeReady { get; private set; }
+    public int TripleCostNow => Mathf.Max(MinSkillCost, TripleCost - skillCostCut);
+    public int SlamCostNow => Mathf.Max(MinSkillCost, SlamCost - skillCostCut);
+    public bool TripleReady { get; private set; }
+    public int TripleCd { get; private set; }   // 남은 쿨타임(턴)
+    public int SlamCd { get; private set; }
+    public static int Dots(int cdTurns) => (cdTurns + TurnsPerDot - 1) / TurnsPerDot;
     public int Level { get; private set; } = 1;
     public int NextLevelExp => (3 * Level * Level + 9 * Level) / 2;   // 6, 15, 27, 42, 60 …
     int steps;
 
-    public void ToggleStrike()
+    // [Q] 3연격 준비/해제 (기력은 실제로 때릴 때 쓴다)
+    public void ToggleTriple()
     {
         if (Dead) return;
-        if (StrikeReady) { StrikeReady = false; GameLog.Add("모은 힘을 풀었다.", GameLog.Info); }
-        else if (Mp >= strikeCost) { StrikeReady = true; GameLog.Add($"힘을 모은다 — 다음 공격은 강타! (두 배, 피할 수 없음, 기력 {strikeCost})", GameLog.Warn); }
-        else GameLog.Add($"기력이 모자라다. (강타에 {strikeCost} 필요)", GameLog.Info);
+        if (TripleReady) { TripleReady = false; GameLog.Add("자세를 풀었다.", GameLog.Info); }
+        else if (TripleCd > 0) GameLog.Add("아직 3연격을 쓸 수 없다.", GameLog.Info);
+        else if (Mp >= TripleCostNow) { TripleReady = true; GameLog.Add("다음 공격은 3연격!", GameLog.Warn); }
+        else GameLog.Add("기력이 모자라다.", GameLog.Info);
         OnChanged?.Invoke();
     }
 
-    // 공격할 때 부른다: 강타가 준비돼 있으면 기력을 쓰고 true
-    public bool ConsumeStrike()
+    // 공격할 때 부른다: 3연격이 준비돼 있으면 기력을 쓰고 쿨타임을 걸고 true
+    public bool ConsumeTriple()
     {
-        if (!StrikeReady || Mp < strikeCost) { StrikeReady = false; return false; }
-        StrikeReady = false;
-        Mp -= strikeCost;
+        if (!TripleReady || Mp < TripleCostNow || TripleCd > 0) { TripleReady = false; return false; }
+        TripleReady = false;
+        Mp -= TripleCostNow;
+        TripleCd = TripleCooldown + 1;   // 쓴 턴의 끝에서 하나 줄어든다
         OnChanged?.Invoke();
         return true;
+    }
+
+    // [W] 점프 찍기를 지금 쓸 수 있는가 (안 되면 이유를 로그에)
+    public bool CanSlam()
+    {
+        if (Dead) return false;
+        if (SlamCd > 0) { GameLog.Add("아직 점프 찍기를 쓸 수 없다.", GameLog.Info); return false; }
+        if (Mp < SlamCostNow) { GameLog.Add("기력이 모자라다.", GameLog.Info); return false; }
+        return true;
+    }
+
+    public void SpendSlam()
+    {
+        Mp -= SlamCostNow;
+        SlamCd = SlamCooldown + 1;       // 쓴 턴의 끝에서 하나 줄어든다
+        OnChanged?.Invoke();
+    }
+
+    // ---- 보조칸 추가 타격 ----
+    public const float OffhandChance = 0.2f;        // 일반 공격이 맞은 뒤 보조칸이 한 번 더 칠 확률
+    public const float OffhandWeaponMult = 0.6f;    // 한손 무기를 보조칸에 끼면 무기 공격력의 60%
+
+    // 보조칸 한 방의 피해 (맨손 공격력은 더하지 않는다). 방패는 방패 자체 공격력(약함).
+    public int RollOffhand()
+    {
+        var o = Offhand;
+        if (o == null) return 0;
+        int raw = UnityEngine.Random.Range(o.attackMin, o.attackMax + 1);
+        return o.IsWeapon ? Mathf.Max(1, Mathf.RoundToInt(raw * OffhandWeaponMult)) : Mathf.Max(1, raw);
+    }
+
+    // 처음 얻은 아이템: 설명 첫 줄을 화면 상단에 한 번 (다음 회차엔 다시 안 뜬다)
+    void ShowItemIntro(ItemDef def)
+    {
+        string id = "item_" + def.id;
+        if (TowerMemory.HintSeen(id)) return;
+        TowerMemory.MarkHint(id);
+        TipBanner.Show($"{def.name}: {def.desc.Split('\n')[0]}");
     }
 
     // 공격받지 않고 한 칸 걸었을 때
@@ -202,8 +264,9 @@ public class PlayerStats : MonoBehaviour, LightSources.ISource
             Level++;
             Hp = Mathf.Min(maxHp, Hp + 10);
             Mp = maxMp;
-            GameLog.Add($"레벨이 올랐다! (Lv.{Level}) 기력이 가득 찼다.", GameLog.Good);
+            GameLog.Add($"레벨이 올랐다! Lv.{Level}", GameLog.Good);
             DamagePopup.Spawn(DamagePopup.Above(this, 1.2f), "레벨 업!", DamagePopup.Big, 1.4f);
+            Sfx.Play("level_up");
             LevelUpChoice.Enqueue(this);
         }
     }
@@ -217,7 +280,7 @@ public class PlayerStats : MonoBehaviour, LightSources.ISource
             case LevelUpChoice.Perk.Sharp: fistMin++; fistMax++; break;
             case LevelUpChoice.Perk.Might: strength++; break;
             case LevelUpChoice.Perk.Focus: maxMp += 10; Mp += 10; break;
-            case LevelUpChoice.Perk.Technique: strikeCost = Mathf.Max(4, strikeCost - 3); break;
+            case LevelUpChoice.Perk.Technique: skillCostCut += 2; break;
             case LevelUpChoice.Perk.Stomach: maxHunger += 25; Hunger += 25; break;
             case LevelUpChoice.Perk.Recovery: stepsPerRegen = Mathf.Max(3, stepsPerRegen - 3); break;
             case LevelUpChoice.Perk.Torchbearer:
@@ -234,9 +297,13 @@ public class PlayerStats : MonoBehaviour, LightSources.ISource
         // 배가 고프지 않으면 기력이 한 턴에 1씩 찬다 (배고프면 멈춘다)
         if (Hunger > hungryWarnAt && Mp < maxMp) Mp++;
 
+        // 스킬 쿨타임
+        if (TripleCd > 0 && --TripleCd == 0) GameLog.Add("3연격을 다시 쓸 수 있다. [Q]", GameLog.Info);
+        if (SlamCd > 0 && --SlamCd == 0) GameLog.Add("점프 찍기를 다시 쓸 수 있다. [W]", GameLog.Info);
+
         int before = Hunger;
         Hunger = Mathf.Max(0, Hunger - hungerPerTurn);
-        if (before > hungryWarnAt && Hunger <= hungryWarnAt) GameLog.Add("배가 고프다. ([E]로 식량을 먹는다)", GameLog.Warn);
+        if (before > hungryWarnAt && Hunger <= hungryWarnAt) GameLog.Add("배가 고프다.", GameLog.Warn);
         if (Hunger == 0)
         {
             if (before > 0) GameLog.Add("굶주림에 몸이 버티지 못한다.", GameLog.Bad);
@@ -290,7 +357,8 @@ public class PlayerStats : MonoBehaviour, LightSources.ISource
         int before = Hunger;
         Hunger = Mathf.Min(maxHunger, Hunger + foodRestore);
         GameLog.Add("배를 채웠다.", GameLog.Good);
-        GridClickMover.PlayAnim("Drink");
+        GridClickMover.PlayAction("Drink", GridClickMover.DrinkSeconds);
+        Sfx.Play("eat", 0.3f);
         DamagePopup.Spawn(DamagePopup.Above(this), $"허기 +{Hunger - before}", DamagePopup.Heal, 0.9f);
         OnChanged?.Invoke();
     }
@@ -324,6 +392,15 @@ public class PlayerStats : MonoBehaviour, LightSources.ISource
     }
 
     public void RestoreMp() { Mp = maxMp; OnChanged?.Invoke(); }
+
+    // 힘의 물약·힘의 책
+    public void AddStrength(int n)
+    {
+        strength += n;
+        DamagePopup.Spawn(DamagePopup.Above(this), $"힘 +{n}", DamagePopup.Big, 1.2f);
+        GameLog.Add($"힘이 솟는다. 힘 {strength}", GameLog.Good);
+        OnChanged?.Invoke();
+    }
 
     public void CurePoison()
     {

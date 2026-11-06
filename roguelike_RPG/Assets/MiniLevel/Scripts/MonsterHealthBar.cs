@@ -6,6 +6,7 @@ using UnityEngine.UI;
 public class MonsterHealthBar : MonoBehaviour
 {
     const float Width = 160f, Height = 14f, Scale = 0.012f;
+    const float MaxHeight = 4.2f;   // 큰 몬스터도 이 높이 위로는 올리지 않는다 (화면 위로 벗어나지 않게)
 
     Monster target;
     Canvas canvas;
@@ -63,7 +64,7 @@ public class MonsterHealthBar : MonoBehaviour
         // 모델 꼭대기 높이
         var b = new Bounds(target.transform.position, Vector3.zero);
         foreach (var r in target.GetComponentsInChildren<Renderer>()) b.Encapsulate(r.bounds);
-        headHeight = b.max.y - target.transform.position.y + 0.4f;
+        headHeight = Mathf.Min(MaxHeight, b.max.y - target.transform.position.y + 0.4f);
     }
 
     public void Refresh()

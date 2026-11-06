@@ -28,13 +28,23 @@ public static class MixamoSetup
     {
         ("Torch_Idle", "Idle", true, null, true, 0f),
         ("Torch_Walk", "Walk", true, null, true, 0f),
-        ("Torch_Attack", "Attack", false, "Attack", true, 0.6f),
+        ("Torch_Attack", "Attack", false, "Attack", true, 0.85f),
         ("Hit_Reaction", "Hit", false, "Hit", false, 0.4f),
         ("Dying", "Die", false, "Die", false, 1.6f),
         ("Throw", "Throw", false, "Throw", false, 0.8f),
         ("Drinking", "Drink", false, "Drink", false, 1.4f),
         ("Picking_Up", "PickUp", false, "PickUp", false, 1.0f),
         ("Torch_Light_Wall", "LightTorch", false, "LightTorch", true, 1.4f),
+        // 아래는 아직 파일이 없다 (없으면 "없음"만 남기고 넘어간다). Models/Mixamo에 이 이름으로 넣고 메뉴를 다시 돌린다.
+        // 공격 모션 여럿: GridClickMover가 Attack1→2→3 차례로 쓰고, 하나도 없으면 Attack(Torch_Attack)
+        ("Attack1", "Attack1", false, "Attack1", false, 0.85f),
+        ("Attack2", "Attack2", false, "Attack2", false, 0.85f),
+        ("Attack3", "Attack3", false, "Attack3", false, 0.85f),
+        // 스킬 모션
+        ("Triple", "Triple", false, "Triple", true, 0f),             // 3연격 콤보 (블렌더에서 Torch_Attack 자세로 엮음, 원래 속도: 타격 0.27·0.62·0.97초)
+        ("JumpSlam", "JumpSlam", false, "JumpSlam", false, 0.6f),    // 점프 찍기
+        ("ShieldBash", "ShieldBash", false, "ShieldBash", false, 0.5f),
+        ("ThrowDart", "ThrowDart", false, "ThrowDart", false, 0.5f),
     };
 
     static MixamoSetup()

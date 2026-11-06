@@ -7,7 +7,7 @@ using UnityEngine;
 [RequireComponent(typeof(Monster))]
 public class Boss : MonoBehaviour
 {
-    public enum Kind { PackLeader, SlimeQueen }
+    public enum Kind { PackLeader, SlimeQueen, GiantSkeleton }   // 거인 해골(5층): 패턴은 Monster(Behavior.Giant)가 맡는다
 
     public Kind kind;
     public GameObject minionPrefab;
@@ -31,6 +31,7 @@ public class Boss : MonoBehaviour
     void Tick(int turn)
     {
         if (!Alive || !monster.IsAwake) return;
+        if (kind == Kind.GiantSkeleton) return;   // 졸개를 부르지 않는다
         if (every == 0) every = kind == Kind.PackLeader ? 6 : 5;   // (AddComponent 직후 kind를 정하므로 여기서)
 
         if (!enraged && monster.Hp <= monster.MaxHp / 2)
@@ -39,12 +40,12 @@ public class Boss : MonoBehaviour
             if (kind == Kind.PackLeader)
             {
                 monster.doubleAttackChance = 0.5f;
-                GameLog.Add($"{Title}{Korean.Josa(Title, "이", "가")} 피를 흘리며 포효한다! (광폭 — 자주 두 번 덤빈다)", GameLog.Bad);
+                GameLog.Add($"{Title}{Korean.Josa(Title, "이", "가")} 피를 흘리며 포효한다!", GameLog.Bad);
             }
             else
             {
                 every = 3;
-                GameLog.Add($"{Title}{Korean.Josa(Title, "이", "가")} 부르르 떨며 몸을 쪼갠다! (새끼를 더 자주 낳는다)", GameLog.Bad);
+                GameLog.Add($"{Title}{Korean.Josa(Title, "이", "가")} 부르르 떨며 몸을 쪼갠다!", GameLog.Bad);
             }
             CameraFollowOcclusion.Shake(0.3f, 0.3f);
             counter = every - 1;   // 곧바로 한 번 부른다

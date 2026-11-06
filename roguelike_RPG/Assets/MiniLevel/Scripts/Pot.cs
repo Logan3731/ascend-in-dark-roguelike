@@ -23,8 +23,9 @@ public class Pot : Interactable
         TurnResolver.BeginTurn(pc, mover != null ? mover.moveSeconds : 0.3f);
         Roll(player, cell);
         TurnResolver.ResolveAttacks(player, null);
-        TurnResolver.BusyUntil = Mathf.Max(TurnResolver.BusyUntil, Time.time + 0.3f);
+        TurnResolver.BusyUntil = Mathf.Max(TurnResolver.BusyUntil, Time.time + GridClickMover.TurnSeconds);   // 깨는 데 한 턴 = 한 칸 걷는 시간
         StartCoroutine(Shatter());
+        Sfx.Play("pot_break");
     }
 
     void Roll(PlayerStats player, Vector2Int cell)
@@ -65,7 +66,7 @@ public class Pot : Interactable
             Destroy(shard, 1.2f);
         }
         var start = transform.localScale;
-        for (float t = 0f; t < 1f; t += Time.deltaTime / 0.2f)
+        for (float t = 0f; t < 1f; t += Time.deltaTime / (GridClickMover.TurnSeconds * 0.6f))
         {
             transform.localScale = new Vector3(start.x * (1f + t * 0.3f), start.y * (1f - t), start.z * (1f + t * 0.3f));
             yield return null;

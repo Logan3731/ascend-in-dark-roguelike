@@ -22,11 +22,70 @@ public class HUD : MonoBehaviour
 
     Bar hp, mp, hunger, torch;
     Text headerText, turnText, foodText, goldText;
-    GameObject poisonChip, torchChip;
-    Text poisonChipText;
+    GameObject poisonChip, torchChip, burnChip;
+    Text poisonChipText, burnChipText;
     Text[] logLines;
 
+    class Skill
+    {
+        public Button button;
+        public Image bg;
+        public Text label;
+        public Image[] dots;
+    }
+    Skill triple, slam, magnifier, food;
+    static readonly Color SkillReadyColor = new Color(0.55f, 0.32f, 0.08f, 0.95f);
+
     void Awake() => Build();
+
+    void RefreshSkills(PlayerStats s)
+    {
+        SetSkill(triple, "[Q] 3연격", s.TripleCostNow, s.TripleCd, s.Mp >= s.TripleCostNow, s.TripleReady);
+        SetSkill(slam, "[W] 점프 찍기", s.SlamCostNow, s.SlamCd, s.Mp >= s.SlamCostNow, false);
+        // 돋보기: 기력·쿨타임 없음, 켜져 있으면 밝게
+        magnifier.label.text = GridClickMover.Magnifying ? "<size=19>[S] 돋보기</size>\n<size=14><color=#dcb86b>켜짐</color></size>" : "<size=19>[S] 돋보기</size>\n<size=14><color=#9e9480>꺼짐</color></size>";
+        magnifier.bg.color = GridClickMover.Magnifying ? SkillReadyColor : UIKit.ButtonColor;
+        food.label.text = $"<size=19>[E] 식량</size>\n<size=14><color={(s.Food > 0 ? "#a8d46f" : "#e0704a")}>× {s.Food}</color></size>";
+        food.bg.color = s.Food > 0 ? UIKit.ButtonColor : new Color(0.08f, 0.07f, 0.06f, 0.85f);
+    }
+
+    static void SetSkill(Skill k, string name, int cost, int cd, bool enoughMp, bool ready)
+    {
+        bool usable = cd == 0 && enoughMp;
+        k.label.text = $"<size=19>{name}</size>\n<size=14><color={(enoughMp ? "#9ed0ff" : "#e0704a")}>기력 {cost}</color></size>";
+        k.bg.color = ready ? SkillReadyColor : usable ? UIKit.ButtonColor : new Color(0.08f, 0.07f, 0.06f, 0.85f);
+        k.label.color = usable || ready ? new Color(0.92f, 0.88f, 0.8f) : new Color(0.5f, 0.47f, 0.42f);
+        int n = PlayerStats.Dots(cd);
+        for (int i = 0; i < k.dots.Length; i++) k.dots[i].enabled = i < n;
+    }
+
+    // right: 버튼 오른쪽 끝의 x (화면 오른쪽 기준). 버튼 아래에 쿨타임 점 자리를 만든다.
+    Skill SkillButton(RectTransform root, float right, int cooldown, System.Action onClick)
+    {
+        const float w = 160, h = 58;
+        var k = new Skill();
+        k.button = UIKit.Button(root, "", 19, () => onClick());
+        k.bg = k.button.GetComponent<Image>();
+        k.label = k.button.GetComponentInChildren<Text>();
+        k.label.lineSpacing = 0.9f;
+        UIKit.Place((RectTransform)k.button.transform, new Vector2(1, 0), new Vector2(right, 76), new Vector2(w, h));
+
+        int max = PlayerStats.Dots(cooldown + 1);   // 쓴 직후 잠깐 하나 더 많을 수 있다
+        k.dots = new Image[max];
+        const float gap = 16;
+        for (int i = 0; i < max; i++)
+        {
+            var d = UIKit.Image(root, "CooldownDot", new Color(0.95f, 0.75f, 0.35f, 0.95f));
+            float x = right - w / 2 + (i - (max - 1) / 2f) * gap;   // 버튼 가운데 아래에 나란히
+            UIKit.Place(d.rectTransform, new Vector2(1, 0), Vector2.zero, new Vector2(10, 10));
+            d.rectTransform.pivot = new Vector2(0.5f, 0.5f);
+            d.rectTransform.anchoredPosition = new Vector2(x, 62);
+            d.rectTransform.localRotation = Quaternion.Euler(0, 0, 45);
+            d.enabled = false;
+            k.dots[i] = d;
+        }
+        return k;
+    }
 
     void OnEnable()
     {
@@ -44,6 +103,7 @@ public class HUD : MonoBehaviour
 
     void Start()
     {
+        gameObject.AddComponent<QuickBar>().player = stats;   // 화면 아래 단축키 칸 1~4
         RefreshBars();
         RefreshTurn(TurnManager.Turn);
         RefreshLog();
@@ -87,10 +147,18 @@ public class HUD : MonoBehaviour
         poisonChip.SetActive(s.PoisonTurns > 0);
         poisonChipText.text = $"중독 {s.PoisonTurns}";
         torchChip.SetActive(s.TorchLit);
+        int burn = Fire.BurnTurnsOf(s);
+        burnChip.SetActive(burn > 0);
+        burnChipText.text = $"화상 {burn}";
+        // 켜진 칩만 왼쪽부터 나란히
+        float cx = 270;
+        foreach (var chip in new[] { burnChip, poisonChip, torchChip })
+            if (chip.activeSelf) { ((RectTransform)chip.transform).anchoredPosition = new Vector2(cx, -33); cx += 102; }
 
         SetBar(hp, s.Hp, s.maxHp, s.Hp < s.maxHp * 0.3f);
-        SetBar(mp, s.Mp, s.maxMp, s.StrikeReady);
-        if (s.StrikeReady) mp.value.text = "강타 준비!";
+        SetBar(mp, s.Mp, s.maxMp, s.TripleReady);
+        if (s.TripleReady) mp.value.text = "3연격 준비!";
+        RefreshSkills(s);
         SetBar(hunger, s.Hunger, s.maxHunger, s.Hunger <= s.hungryWarnAt);
         SetBar(torch, s.Torch, s.maxTorch, s.TorchLit && s.Torch <= s.torchWarnAt);
         if (!s.HasTorch) torch.value.text = "없음";
@@ -143,6 +211,7 @@ public class HUD : MonoBehaviour
         poisonChip = Chip(root, new Vector2(270, -33), new Color(0.25f, 0.4f, 0.1f, 0.9f), new Color(0.75f, 0.95f, 0.45f), out poisonChipText);
         torchChip = Chip(root, new Vector2(372, -33), new Color(0.45f, 0.24f, 0.06f, 0.9f), new Color(1f, 0.75f, 0.4f), out var torchChipText);
         torchChipText.text = "횃불 듦";
+        burnChip = Chip(root, new Vector2(270, -33), new Color(0.55f, 0.15f, 0.05f, 0.9f), new Color(1f, 0.7f, 0.4f), out burnChipText);
 
         float y = -72f;
         hp = MakeBar(root, "hp", "HP", new Color(0.78f, 0.2f, 0.17f), ref y);
@@ -168,8 +237,14 @@ public class HUD : MonoBehaviour
         UIKit.Stretch(turnText.rectTransform);
 
         // 우하단 조작 안내
-        var keys = Shadowed(UIKit.Text(root, "[I] 소지품    [Q] 강타    [F] 횃불    [T] 던지기    [E] 먹기    [Esc] 메뉴", 18, TextAnchor.LowerRight, new Color(1, 1, 1, 0.45f)));
-        UIKit.Place(keys.rectTransform, new Vector2(1, 0), new Vector2(-28, 22), new Vector2(600, 26));
+        var keys = Shadowed(UIKit.Text(root, "[I] 소지품    [1~4] 단축키    [Space] 확인    [Q] 3연격    [W] 점프 찍기    [S] 돋보기    [R] 다트    [F] 횃불    [T] 횃불 던지기    [E] 먹기    [Esc] 메뉴", 18, TextAnchor.LowerRight, new Color(1, 1, 1, 0.45f)));
+        UIKit.Place(keys.rectTransform, new Vector2(1, 0), new Vector2(-28, 22), new Vector2(900, 26));
+
+        // 우하단 스킬 버튼 두 개 (클릭해도 된다) + 버튼 아래 쿨타임 점 (점 하나 = 2턴)
+        triple = SkillButton(root, -208, PlayerStats.TripleCooldown, GridClickMover.UseTriple);
+        slam = SkillButton(root, -28, PlayerStats.SlamCooldown, GridClickMover.UseSlam);
+        magnifier = SkillButton(root, -388, 0, GridClickMover.UseMagnifier);
+        food = SkillButton(root, -568, 0, GridClickMover.UseFood);   // 쿨타임 없음 (점 자리만 빈다)
 
         // 좌하단 로그 (왼쪽이 진하고 오른쪽으로 사라지는 배경)
         const int lineH = 34;

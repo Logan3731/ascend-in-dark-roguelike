@@ -72,6 +72,8 @@ public class DeathScreen : MonoBehaviour
             var info = TowerMemory.Upgrades[i];
             int lv = TowerMemory.Level(u);
             rowTexts[i].text = $"{info.name}   <color=#b9b09a>{info.effect}</color>   <color=#8c8473>Lv {lv}/{info.maxLevel}</color>";
+            bool off = u == TowerMemory.Upgrade.Strength || u == TowerMemory.Upgrade.Fist;   // 힘·공격은 강화로 올리지 않는다
+            rowTexts[i].transform.parent.gameObject.SetActive(!off);
             bool maxed = TowerMemory.IsMaxed(u);
             int cost = TowerMemory.Cost(u);
             buyButtons[i].interactable = !maxed && TowerMemory.Essence >= cost;

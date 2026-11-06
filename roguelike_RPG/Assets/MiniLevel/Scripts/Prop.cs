@@ -11,7 +11,7 @@ public abstract class Prop : Interactable
         if (mover != null) mover.FaceTo(facing);
         TurnResolver.BeginTurn(GridTile.WorldToCell(player.transform.position), mover != null ? mover.moveSeconds : 0.3f);
         TurnResolver.ResolveAttacks(player, null);
-        TurnResolver.BusyUntil = Mathf.Max(TurnResolver.BusyUntil, Time.time + busy);
+        TurnResolver.BusyUntil = Mathf.Max(TurnResolver.BusyUntil, Time.time + Mathf.Max(busy, GridClickMover.TurnSeconds));   // 걷기와 같은 박자
     }
 
     // 다 쓴 소품은 어둡게 (다시 눌러도 반응만 한다)

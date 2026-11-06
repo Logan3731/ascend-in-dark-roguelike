@@ -12,7 +12,7 @@ public class LevelUpChoice : MonoBehaviour
         [Perk.Vitality] = ("체력 +15", "최대 체력 +15"),
         [Perk.Sharp] = ("공격 +1", "공격력 +1"),
         [Perk.Focus] = ("기력 +10", "최대 기력 +10"),
-        [Perk.Technique] = ("강타 기력 -3", "강타 비용 -3"),
+        [Perk.Technique] = ("스킬 기력 -2", "3연격·점프 찍기 기력 비용 -2"),
         [Perk.Stomach] = ("허기 +25", "최대 허기 +25"),
         [Perk.Recovery] = ("걸음 회복 ↑", "걸을 때 체력 회복 빠르게"),
         [Perk.Torchbearer] = ("횃불 +60", "횃불 내구도 +60"),
@@ -46,6 +46,8 @@ public class LevelUpChoice : MonoBehaviour
 
             pending--;
             var pool = new List<Perk>((Perk[])System.Enum.GetValues(typeof(Perk)));
+            pool.Remove(Perk.Might);   // 힘은 힘의 물약·힘의 책으로만
+            pool.Remove(Perk.Sharp);   // 공격력은 레벨 업으로 올리지 않는다
             for (int i = pool.Count - 1; i > 0; i--) { int j = Random.Range(0, i + 1); (pool[i], pool[j]) = (pool[j], pool[i]); }
             var picks = pool.GetRange(0, 3);
             string body = $"<color=#dcb86b>레벨 업! Lv.{player.Level}</color>   하나를 고른다.\n<size=22><color=#9e9480>" +

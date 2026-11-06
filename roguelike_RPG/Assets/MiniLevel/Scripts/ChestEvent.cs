@@ -17,8 +17,9 @@ public class ChestEvent : Interactable
     {
         if (Used) return;
         Used = true;
-        GridClickMover.PlayAnim("PickUp");
-        TurnResolver.BusyUntil = Mathf.Max(TurnResolver.BusyUntil, Time.time + 0.7f);   // 뚜껑이 열리고 창이 뜰 때까지 대기
+        GridClickMover.PlayAction("PickUp", GridClickMover.PickUpSeconds);
+        Sfx.Play("chest_open", 0.2f);
+        TurnResolver.BusyUntil = Mathf.Max(TurnResolver.BusyUntil, Time.time + GridClickMover.TurnSeconds + 0.3f);   // 뚜껑이 열리고 창이 뜰 때까지 대기
         StartCoroutine(Open(player));
     }
 
@@ -29,7 +30,7 @@ public class ChestEvent : Interactable
         {
             var closed = lid.localRotation;
             var open = closed * Quaternion.AngleAxis(-openAngle, Vector3.right);
-            for (float t = 0f; t < 1f; t += Time.deltaTime / 0.45f)
+            for (float t = 0f; t < 1f; t += Time.deltaTime / GridClickMover.TurnSeconds)
             {
                 float e = 1f - (1f - t) * (1f - t) * (1f - t);   // 처음엔 빠르게, 끝에서 천천히
                 lid.localRotation = Quaternion.SlerpUnclamped(closed, open, e);
@@ -44,7 +45,7 @@ public class ChestEvent : Interactable
         DialogUI.Show($"{title}를 열었다.\n{string.Join(",  ", loot)}",
             new DialogUI.Choice("확인", () =>
             {
-                if (givesTorch) GameLog.Add("[F] 키로 횃불을 들면 주변이 밝아진다.", GameLog.Warn);
+                if (givesTorch) TipBanner.Show("[F] 키로 횃불을 들면 주변이 밝아진다.");
                 FadeOut.Run(this, 1.2f);
             }));
     }

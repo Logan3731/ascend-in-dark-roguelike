@@ -18,6 +18,8 @@ public class GoblinEvent : Interactable
             new ShopUI.Ware { icon = "potion_red", label = "수상한 물약", price = 20, stock = 2, give = p => p.Bag.Add(Potions.RandomPotion()) },
             new ShopUI.Ware { icon = "torch", label = "낡은 횃불", price = 15, stock = 2, give = p => p.GiveTorch() },
             new ShopUI.Ware { icon = "key", label = "녹슨 열쇠", price = 60, stock = 1, give = p => p.Bag.Add(Items.Key) },
+            // [임시·테스트용] 보조칸 확인용 방패. 방패·보조무기를 얻는 경로(상자·상인·제작)를 정하면 빼거나 옮긴다.
+            new ShopUI.Ware { icon = "shield", label = "나무 방패", price = 25, stock = 1, give = p => { if (!p.Bag.Add(Items.Shield)) GameLog.Add("가방이 가득 찼다.", GameLog.Warn); } },
         };
     }
 

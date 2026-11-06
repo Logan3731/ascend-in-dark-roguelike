@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 
 // 격자 이동 규칙 (플레이어·몬스터 공통). 8방향으로 움직이고 대각선도 한 칸 = 한 턴.
-// 대각선은 벽 모서리 하나는 끼고 지나갈 수 있지만, 두 벽 사이를 비집거나 문을 비스듬히 드나들 수는 없다.
+// 대각선은 벽 모서리 하나는 끼고 지나갈 수 있지만(문도 비스듬히 드나든다), 두 벽 사이를 비집을 수는 없다.
 // (옆 칸에 몬스터가 서 있는 건 괜찮다. 막는 건 벽뿐)
 public static class GridNav
 {
@@ -44,13 +44,37 @@ public static class GridNav
 
     public static int Distance(Vector2Int a, Vector2Int b) => Mathf.Max(Mathf.Abs(a.x - b.x), Mathf.Abs(a.y - b.y));
 
-    // from → from+d 로 한 걸음 (이동·공격 공통). 대각선은 벽 모서리 하나쯤은 끼고 지나갈 수 있다.
-    // 막히는 건 두 벽 사이를 비집는 경우(양옆이 다 벽)와 문을 비스듬히 드나드는 경우뿐.
+    // from → from+d 로 한 걸음 (이동·공격 공통). 대각선은 벽 모서리 하나쯤은 끼고 지나갈 수 있다 (문도 비스듬히 드나든다).
+    // 막히는 건 두 벽 사이를 비집는 경우(양옆이 다 벽)뿐.
     public static bool CornerFree(Vector2Int from, Vector2Int d, HashSet<Vector2Int> floors)
     {
         if (d.x == 0 || d.y == 0) return true;
-        if (Door.At(from) != null || Door.At(from + d) != null) return false;
         return floors.Contains(from + new Vector2Int(d.x, 0)) || floors.Contains(from + new Vector2Int(0, d.y));
+    }
+
+    // a에서 b가 보이는가: 사이에 벽·닫힌 문·숨겨진 무너진 벽이 없어야 한다 (두 벽 사이 틈으로도 못 본다).
+    // 몬스터가 나를 알아채고, 소리에 깨는 것은 서로 보이는 곳(같은 방·트인 길)에서만.
+    public static bool LineOfSight(Vector2Int a, Vector2Int b)
+    {
+        var floors = Floors();
+        int dx = Mathf.Abs(b.x - a.x), dy = Mathf.Abs(b.y - a.y);
+        int sx = a.x < b.x ? 1 : -1, sy = a.y < b.y ? 1 : -1;
+        int err = dx - dy;
+        var c = a;
+        while (c != b)
+        {
+            int e2 = err * 2;
+            var step = Vector2Int.zero;
+            if (e2 > -dy) { err -= dy; step.x = sx; }
+            if (e2 < dx) { err += dx; step.y = sy; }
+            if (!CornerFree(c, step, floors)) return false;
+            c += step;
+            if (c == b) break;
+            if (!floors.Contains(c) || Rubble.HiddenAt(c) || Grass.BlocksSight(c)) return false;   // 풀숲 너머도 안 보인다
+            var door = Door.At(c);
+            if (door != null && !door.IsOpen) return false;
+        }
+        return true;
     }
 
     // 바로 옆 칸인가 (대각선 포함, 두 벽 사이 너머는 아님) — 공격·상호작용 거리
